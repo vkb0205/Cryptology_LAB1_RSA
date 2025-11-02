@@ -155,32 +155,96 @@ public:
 
     // --- Layer 2: Core Arithmetic ---
 
-    // Addition (a + b)
-    friend BigInt operator+(const BigInt& a, const BigInt& b) {
+    // // Addition (a + b)
+    // friend BigInt operator+(const BigInt& a, const BigInt& b) {
         
-    }
+    // }
 
-    // Subtraction (a - b)
-    friend BigInt operator-(const BigInt& a, const BigInt& b) {
+    // // Subtraction (a - b)
+    // friend BigInt operator-(const BigInt& a, const BigInt& b) {
         
-    }
+    // }
 
-    // Multiplication (a * b) - Grade School O(n^2)
-    friend BigInt operator*(const BigInt& a, const BigInt& b) {
+    // // Multiplication (a * b) - Grade School O(n^2)
+    // friend BigInt operator*(const BigInt& a, const BigInt& b) {
         
-    }
+    // }
     
-    // Division and Modulo (a / b) and (a % b)
-    // Returns {quotient, remainder}
-    static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
+    // // Division and Modulo (a / b) and (a % b)
+    // // Returns {quotient, remainder}
+    // static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
         
-    }
+    // }
 
-    friend BigInt operator/(const BigInt& a, const BigInt& b) {
-        return divmod(a, b).first;
-    }
-    friend BigInt operator%(const BigInt& a, const BigInt& b) {
-        return divmod(a, b).second;
+    // friend BigInt operator/(const BigInt& a, const BigInt& b) {
+    //     return divmod(a, b).first;
+    // }
+    // friend BigInt operator%(const BigInt& a, const BigInt& b) {
+    //     return divmod(a, b).second;
+    // }
+
+    /**
+     * @brief Prints the BigInt to std::cout as a base-10 decimal string.
+     * This is slow for very large numbers due to repeated division.
+     */
+    // void print_decimal() const {
+    //     // Handle the zero case
+    //     if (is_zero()) {
+    //         std::cout << "0" << std::endl;
+    //         return;
+    //     }
+
+    //     BigInt temp = *this;
+    //     std::string decimal_str;
+    //     const BigInt TEN(10); // Create a BigInt for 10
+
+    //     while (!temp.is_zero()) {
+    //         // Use the divmod we already built
+    //         std::pair<BigInt, BigInt> result = divmod(temp, TEN);
+            
+    //         BigInt& quotient = result.first;
+    //         BigInt& remainder = result.second; // This will be 0-9
+
+    //         // The remainder's value is in its first (and only) limb
+    //         uint64_t digit = remainder.limbs[0];
+    //         decimal_str += (char)(digit + '0');
+
+    //         temp = quotient; // Update temp = temp / 10
+    //     }
+
+    //     // The digits were added in reverse order (LSD first)
+    //     std::reverse(decimal_str.begin(), decimal_str.end());
+
+    //     std::cout << decimal_str << std::endl;
+    // }
+
+    /**
+     * @brief Prints the BigInt to std::cout as a base-16 hexadecimal string.
+     * This is very fast as it maps directly to the limb storage.
+     */
+    void print_hex() const {
+        // Handle the zero case
+        if (is_zero()) {
+            std::cout << "0x0" << std::endl;
+            return;
+        }
+
+        // Set up cout for hex output
+        std::cout << "0x" << std::hex;
+
+        // Print the most significant limb first, without padding
+        std::cout << limbs.back();
+
+        // Print the rest of the limbs, padding with '0' to 16 chars
+        for (int i = limbs.size() - 2; i >= 0; --i) {
+            std::cout << std::setw(16) << std::setfill('0') << limbs[i];
+        }
+
+        // Reset cout to decimal for future use
+        std::cout << std::dec << std::endl;
+        for (int i = 0; i < limbs.size(); i++) {
+            std::cout << limbs[i] << std::endl;
+        }
     }
 };
 
@@ -190,21 +254,21 @@ public:
  * @brief Modular Exponentiation: (base ^ exp) % mod
  * Uses exponentiation by squaring.
  */
-BigInt modular_pow(BigInt base, BigInt exp, const BigInt& mod) {
-    BigInt result(1);
-    base = base % mod;
-    while (!exp.is_zero()) {
-        // If exponent is odd, multiply result by base
-        if (!exp.is_even()) {
-            result = (result * base) % mod;
-        }
-        // Exponent is now even, divide by 2
-        exp = exp >> 1;
-        // Square the base
-        base = (base * base) % mod;
-    }
-    return result;
-}
+// BigInt modular_pow(BigInt base, BigInt exp, const BigInt& mod) {
+//     BigInt result(1);
+//     base = base % mod;
+//     while (!exp.is_zero()) {
+//         // If exponent is odd, multiply result by base
+//         if (!exp.is_even()) {
+//             result = (result * base) % mod;
+//         }
+//         // Exponent is now even, divide by 2
+//         exp = exp >> 1;
+//         // Square the base
+//         base = (base * base) % mod;
+//     }
+//     return result;
+// }
 
 /**
  * @brief Parses a little-endian hex string into a big-endian hex string.
@@ -251,14 +315,10 @@ int main() {
         // 2. Load into our BigInt class
         BigInt number_to_test(be_hex_str);
 
-        // 3. Run the primality test
-        // if (is_prime(number_to_test)) {
-        //     std::cout << "Prime" << std::endl;
-        // } else {
-        //     std::cout << "Composite" << std::endl;
-        // }
-
-        
+        // --- ADD THESE LINES TO PRINT THE NUMBER ---
+        std::cout << "Hex Value:   ";
+        number_to_test.print_hex();
+        // --- END OF NEW LINES ---
 
     } catch (const std::exception& e) {
         std::cerr << "An error occurred: " << e.what() << std::endl;

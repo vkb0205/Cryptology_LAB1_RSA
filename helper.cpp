@@ -9,19 +9,12 @@
 #include <iomanip>      // For std::setw, std::setfill
 
 // --- FOR 128-BIT ARITHMETIC ---
-// We need a 128-bit type to multiply two 64-bit numbers.
-// C++ __uint128_t is non-standard but supported by GCC/Clang.
-#if defined(__GNUC__) || defined(__clang__)
-using uint128_t = __uint128_t;
-#else
-// Fallback for MSVC or other compilers (much slower)
 struct uint128_t {
     uint64_t lo, hi;
     uint128_t(uint64_t l = 0, uint64_t h = 0) : lo(l), hi(h) {}
     // Simplified constructor for this problem
     uint128_t(uint64_t l) : lo(l), hi(0) {}
 };
-#endif
 
 
 /**
@@ -290,40 +283,27 @@ std::string parse_little_endian_hex(const std::string& le_hex) {
     return be_hex;
 }
 
+std::string readFile(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+    std::string le_hex_str;
+    std::getline(file, le_hex_str);
+    file.close();
+    return le_hex_str;
+}
+
 
 // --- Main Program ---
 int main() {
-    std::ifstream infile("test.inp");
-    if (!infile.is_open()) {
-        std::cerr << "Error: Could not open test.inp" << std::endl;
-        return 1;
-    }
-
-    std::string le_hex_str;
-    std::getline(infile, le_hex_str);
-    infile.close();
-
-    if (le_hex_str.empty()) {
+    std::string str1 = readFile("test\\project_01_01\\test_00.inp");
+    std::string str2 = readFile("test\\project_01_01\\test_01.inp");
+    if (str1.empty()) {
         std::cerr << "Error: test.inp is empty." << std::endl;
         return 1;
     }
-
-    try {
-        // 1. Parse the little-endian string
-        std::string be_hex_str = parse_little_endian_hex(le_hex_str);
-
-        // 2. Load into our BigInt class
-        BigInt number_to_test(be_hex_str);
-
-        // --- ADD THESE LINES TO PRINT THE NUMBER ---
-        std::cout << "Hex Value:   ";
-        number_to_test.print_hex();
-        // --- END OF NEW LINES ---
-
-    } catch (const std::exception& e) {
-        std::cerr << "An error occurred: " << e.what() << std::endl;
-        return 1;
-    }
-
+    BigInt n(parse_little_endian_hex(str1));
+    BigInt m(parse_little_endian_hex(str2));
     return 0;
 }

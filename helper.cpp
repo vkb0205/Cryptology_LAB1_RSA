@@ -9,12 +9,17 @@
 #include <iomanip>      // For std::setw, std::setfill
 
 // --- FOR 128-BIT ARITHMETIC ---
+#if defined(__GNUC__) || defined(__clang__)
+using uint128_t = __uint128_t;
+#else
+// Fallback for MSVC or other compilers (much slower)
 struct uint128_t {
     uint64_t lo, hi;
     uint128_t(uint64_t l = 0, uint64_t h = 0) : lo(l), hi(h) {}
     // Simplified constructor for this problem
     uint128_t(uint64_t l) : lo(l), hi(0) {}
 };
+#endif
 
 
 /**
@@ -148,68 +153,125 @@ public:
 
     // --- Layer 2: Core Arithmetic ---
 
-    // // Addition (a + b)
-    // friend BigInt operator+(const BigInt& a, const BigInt& b) {
+    friend BigInt operator+(const BigInt& a, const BigInt& b) {
+        BigInt result;
+        size_t n = std::max(a.limbs.size(), b.limbs.size());
+        result.limbs.resize(n);
         
-    // }
+        uint64_t carry = 0;
+        for (size_t i = 0; i < n; ++i) {
+            uint64_t a_limb = (i < a.limbs.size()) ? a.limbs[i] : 0;
+            uint64_t b_limb = (i < b.limbs.size()) ? b.limbs[i] : 0;
+            
+            // This detects overflow: if sum < a_limb, it wrapped around
+            uint64_t sum = a_limb + carry;
+            bool carry1 = (sum < a_limb);
+            
+            sum += b_limb;
+            bool carry2 = (sum < b_limb);
+            
+            result.limbs[i] = sum;
+            carry = (carry1 || carry2) ? 1 : 0;
+        }
+        if (carry > 0) {
+            result.limbs.push_back(carry);
+        }
+        return result;
+    }
 
-    // // Subtraction (a - b)
-    // friend BigInt operator-(const BigInt& a, const BigInt& b) {
-        
-    // }
+    // Subtraction (a - b)
+    friend BigInt operator-(const BigInt& a, const BigInt& b) {
+        if (a < b) throw std::runtime_error("Subtraction underflow");
+        BigInt result = a;
+        uint64_t borrow = 0;
+        for (size_t i = 0; i < b.limbs.size() || borrow; ++i) {
+            uint64_t b_limb = (i < b.limbs.size()) ? b.limbs[i] : 0;
+            
+            uint64_t diff = result.limbs[i] - borrow;
+            bool borrow1 = (diff > result.limbs[i]); // Underflow
+            
+            result.limbs[i] = diff - b_limb;
+            bool borrow2 = (result.limbs[i] > diff); // Underflow
+            
+            borrow = (borrow1 || borrow2) ? 1 : 0;
+        }
+        result.normalize();
+        return result;
+    }
 
-    // // Multiplication (a * b) - Grade School O(n^2)
+    // Multiplication (a * b) - Grade School O(n^2)
     // friend BigInt operator*(const BigInt& a, const BigInt& b) {
+    //     if (a.is_zero() || b.is_zero()) return BigInt(0);
         
+    //     BigInt result;
+    //     result.limbs.resize(a.limbs.size() + b.limbs.size(), 0);
+
+    //     for (size_t i = 0; i < a.limbs.size(); ++i) {
+    //         uint64_t carry = 0;
+    //         for (size_t j = 0; j < b.limbs.size() || carry; ++j) {
+    //             uint64_t b_limb = (j < b.limbs.size()) ? b.limbs[j] : 0;
+                
+    //             // Use 128-bit math to hold the product
+    //             uint128_t product = (uint128_t)a.limbs[i] * b_limb + 
+    //                                 result.limbs[i + j] + carry;
+                
+    //             result.limbs[i + j] = (uint64_t)product; // Lower 64 bits
+    //             carry = (uint64_t)(product >> 64);      // Upper 64 bits
+    //         }
+    //     }
+    //     result.normalize();
+    //     return result;
     // }
     
-    // // Division and Modulo (a / b) and (a % b)
-    // // Returns {quotient, remainder}
-    // static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
+    // Division and Modulo (a / b) and (a % b)
+    // Returns {quotient, remainder}
+    static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
+        if (divisor_in.is_zero()) throw std::runtime_error("Division by zero");
         
-    // }
+        BigInt quotient(0);
+        BigInt remainder(0);
+        BigInt dividend = dividend_in;
+        BigInt divisor = divisor_in;
 
-    // friend BigInt operator/(const BigInt& a, const BigInt& b) {
-    //     return divmod(a, b).first;
-    // }
-    // friend BigInt operator%(const BigInt& a, const BigInt& b) {
-    //     return divmod(a, b).second;
-    // }
+        if (dividend < divisor) {
+            return {BigInt(0), dividend};
+        }
 
-    /**
-     * @brief Prints the BigInt to std::cout as a base-10 decimal string.
-     * This is slow for very large numbers due to repeated division.
-     */
-    // void print_decimal() const {
-    //     // Handle the zero case
-    //     if (is_zero()) {
-    //         std::cout << "0" << std::endl;
-    //         return;
-    //     }
+        // Binary Long Division (a simpler, but not fastest, approach)
+        // Find the highest power of 2 to multiply the divisor by
+        BigInt temp_divisor = divisor;
+        BigInt power_of_two(1);
+        
+        while (temp_divisor <= dividend) {
+            temp_divisor = temp_divisor << 1;
+            power_of_two = power_of_two << 1;
+        }
+        
+        // Now walk back down
+        temp_divisor = temp_divisor >> 1;
+        power_of_two = power_of_two >> 1;
 
-    //     BigInt temp = *this;
-    //     std::string decimal_str;
-    //     const BigInt TEN(10); // Create a BigInt for 10
+        remainder = dividend;
+        while (!power_of_two.is_zero()) {
+            if (remainder >= temp_divisor) {
+                remainder = remainder - temp_divisor;
+                quotient = quotient + power_of_two;
+            }
+            temp_divisor = temp_divisor >> 1;
+            power_of_two = power_of_two >> 1;
+        }
 
-    //     while (!temp.is_zero()) {
-    //         // Use the divmod we already built
-    //         std::pair<BigInt, BigInt> result = divmod(temp, TEN);
-            
-    //         BigInt& quotient = result.first;
-    //         BigInt& remainder = result.second; // This will be 0-9
+        quotient.normalize();
+        remainder.normalize();
+        return {quotient, remainder};
+    }
 
-    //         // The remainder's value is in its first (and only) limb
-    //         uint64_t digit = remainder.limbs[0];
-    //         decimal_str += (char)(digit + '0');
-
-    //         temp = quotient; // Update temp = temp / 10
-    //     }
-
-    //     // The digits were added in reverse order (LSD first)
-    //     std::reverse(decimal_str.begin(), decimal_str.end());
-
-    //     std::cout << decimal_str << std::endl;
-    // }
+    friend BigInt operator/(const BigInt& a, const BigInt& b) {
+        return divmod(a, b).first;
+    }
+    friend BigInt operator%(const BigInt& a, const BigInt& b) {
+        return divmod(a, b).second;
+    }
 
     /**
      * @brief Prints the BigInt to std::cout as a base-16 hexadecimal string.
@@ -235,33 +297,8 @@ public:
 
         // Reset cout to decimal for future use
         std::cout << std::dec << std::endl;
-        for (int i = 0; i < limbs.size(); i++) {
-            std::cout << limbs[i] << std::endl;
-        }
     }
 };
-
-// --- Layer 3: The Algorithms ---
-
-/**
- * @brief Modular Exponentiation: (base ^ exp) % mod
- * Uses exponentiation by squaring.
- */
-// BigInt modular_pow(BigInt base, BigInt exp, const BigInt& mod) {
-//     BigInt result(1);
-//     base = base % mod;
-//     while (!exp.is_zero()) {
-//         // If exponent is odd, multiply result by base
-//         if (!exp.is_even()) {
-//             result = (result * base) % mod;
-//         }
-//         // Exponent is now even, divide by 2
-//         exp = exp >> 1;
-//         // Square the base
-//         base = (base * base) % mod;
-//     }
-//     return result;
-// }
 
 /**
  * @brief Parses a little-endian hex string into a big-endian hex string.
@@ -294,7 +331,6 @@ std::string readFile(const std::string& filename) {
     return le_hex_str;
 }
 
-
 // --- Main Program ---
 int main() {
     std::string str1 = readFile("test\\project_01_01\\test_00.inp");
@@ -305,5 +341,9 @@ int main() {
     }
     BigInt n(parse_little_endian_hex(str1));
     BigInt m(parse_little_endian_hex(str2));
+
+    n = n + m;
+    n.print_hex();
+
     return 0;
 }

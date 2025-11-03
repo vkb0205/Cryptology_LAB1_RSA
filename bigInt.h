@@ -1,3 +1,9 @@
+// helper.h - declarations for big-integer helpers
+#ifndef HELPER_H
+#define HELPER_H
+
+#include <string>
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -18,6 +24,23 @@ struct uint128_t {
     uint128_t(uint64_t l = 0, uint64_t h = 0) : lo(l), hi(h) {}
     // Simplified constructor for this problem
     uint128_t(uint64_t l) : lo(l), hi(0) {}
+
+    explicit operator uint64_t() const {
+        return lo;
+    };
+
+    static inline uint128_t mul_u64(uint64_t a, uint64_t b) {
+        unsigned __int64 hi;
+        unsigned __int64 lo = _umul128(a, b, &hi); 
+        return uint128_t(lo, hi);
+    }
+
+    // Helper to add a 128-bit and 64-bit integer
+    static inline uint128_t add_u128_u64(uint128_t a, uint64_t b) {
+        uint64_t new_lo = a.lo + b;
+        uint64_t carry = (new_lo < a.lo); // 1 if overflow occurred
+        return uint128_t(new_lo, a.hi + carry);
+    }
 };
 #endif
 
@@ -28,6 +51,23 @@ struct uint128_t {
  * Limbs are little-endian (limbs[0] is the least significant).
  */
 class BigInt {
+private: 
+    static unsigned count_leading_zeros(uint64_t limb) {
+    #if defined(_MSC_VER) && !defined(__clang__)
+        unsigned long idx;
+        _BitScanReverse64(&idx, limb);
+        return 63u - idx;
+    #else
+        return limb ? static_cast<unsigned>(__builtin_clzll(limb)) : 64u;
+    #endif
+    }
+
+    size_t bit_length() const {
+        if (is_zero()) return 0;
+        size_t ms = limbs.size() - 1;
+        uint64_t v = limbs[ms];
+        return ms * 64 + (64 - count_leading_zeros(v));
+    }
 public:
     std::vector<uint64_t> limbs;
 
@@ -50,13 +90,17 @@ public:
         int count = 0;
         uint64_t current_limb = 0;
 
+        //Since the string stores the number in the format of big-endian
         for (int i = len - 1; i >= 0; --i) {
             char c = hex_str[i];
             uint64_t val;
             if (c >= '0' && c <= '9') val = c - '0';
-            else if (c >= 'a' && c <= 'f') val = c - 'a' + 10;
-            else if (c >= 'A' && c <= 'F') val = c - 'A' + 10;
-            else throw std::runtime_error("Invalid hex character");
+            else if (c >= 'a' && c <= 'f') 
+                val = c - 'a' + 10;
+            else if (c >= 'A' && c <= 'F') 
+                val = c - 'A' + 10;
+            else 
+                throw std::runtime_error("Invalid hex character");
 
             current_limb |= (val << (count * 4));
             count++;
@@ -72,7 +116,31 @@ public:
         normalize();
     }
 
+    uint64_t to_uint64() const {
+        if (limbs.empty()) {
+            return 0;
+        }
+        // If there's more than one limb, the number is larger than 2^64 - 1.
+        if (limbs.size() > 1) {
+            return UINT64_MAX;
+        }
+        // Otherwise, the value is just the single limb.
+        return limbs[0];
+    }
+
+    std::string to_hex_string() const {
+        std::ostringstream oss;
+        oss << std::hex << std::nouppercase;
+        if (limbs.empty()) return "0";
+        oss << limbs.back();
+        for (size_t i = limbs.size(); i-- > 1;) {
+            oss << std::setw(16) << std::setfill('0') << limbs[i - 1];
+        }
+        return oss.str();
+    }
+
     // --- Helper Functions ---
+    //Trimming leading zero limbs
     void normalize() {
         while (limbs.size() > 1 && limbs.back() == 0) {
             limbs.pop_back();
@@ -112,20 +180,22 @@ public:
     // --- Bitwise Shift Operators (Needed for Division) ---
     friend BigInt operator<<(const BigInt& a, size_t shift_bits) {
         BigInt result = a;
+        //130 / 64 = 2, r = 2
         size_t shift_limbs = shift_bits / 64;
         size_t inner_shift = shift_bits % 64;
 
         if (inner_shift > 0) {
             uint64_t carry = 0;
             for (size_t i = 0; i < result.limbs.size(); ++i) {
-                uint64_t next_carry = result.limbs[i] >> (64 - inner_shift);
-                result.limbs[i] = (result.limbs[i] << inner_shift) | carry;
-                carry = next_carry;
+                uint64_t next_carry = result.limbs[i] >> (64 - inner_shift); //Take the overflow when you shift left 
+                result.limbs[i] = (result.limbs[i] << inner_shift) | carry; //Store the rest except the overflow part into the current limb
+                carry = next_carry; //Take the overflow part to the next limb
             }
-            if (carry > 0) result.limbs.push_back(carry);
+            if (carry > 0) 
+                result.limbs.push_back(carry);
         }
         if (shift_limbs > 0) {
-            result.limbs.insert(result.limbs.begin(), shift_limbs, 0);
+            result.limbs.insert(result.limbs.begin(), shift_limbs, 0); //Insert 0s to the least significant location
         }
         result.normalize();
         return result;
@@ -160,12 +230,17 @@ public:
         
         uint64_t carry = 0;
         for (size_t i = 0; i < n; ++i) {
+            /*
+            a =    |||| ||||
+            b = || |||| ||||
+            */
+           //Take each set of 64-bit in each limb, if exceed the smaller bigint, refresh the index of that to 0 and go on
             uint64_t a_limb = (i < a.limbs.size()) ? a.limbs[i] : 0;
             uint64_t b_limb = (i < b.limbs.size()) ? b.limbs[i] : 0;
             
             // This detects overflow: if sum < a_limb, it wrapped around
-            uint64_t sum = a_limb + carry;
-            bool carry1 = (sum < a_limb);
+            uint64_t sum = a_limb + carry; //sum is always > a_limb
+            bool carry1 = (sum < a_limb);  //if sum is < a_limb ==> overflow
             
             sum += b_limb;
             bool carry2 = (sum < b_limb);
@@ -174,97 +249,148 @@ public:
             carry = (carry1 || carry2) ? 1 : 0;
         }
         if (carry > 0) {
-            result.limbs.push_back(carry);
+            result.limbs.push_back(carry); //0x00000000000000001
         }
         return result;
     }
 
     // Subtraction (a - b)
     friend BigInt operator-(const BigInt& a, const BigInt& b) {
-        if (a < b) throw std::runtime_error("Subtraction underflow");
+        if (a < b) {
+            throw std::underflow_error("BigInt subtraction would result in negative value");
+        }
+        
         BigInt result = a;
         uint64_t borrow = 0;
+        
         for (size_t i = 0; i < b.limbs.size() || borrow; ++i) {
             uint64_t b_limb = (i < b.limbs.size()) ? b.limbs[i] : 0;
             
-            uint64_t diff = result.limbs[i] - borrow;
-            bool borrow1 = (diff > result.limbs[i]); // Underflow
-            
-            result.limbs[i] = diff - b_limb;
-            bool borrow2 = (result.limbs[i] > diff); // Underflow
-            
-            borrow = (borrow1 || borrow2) ? 1 : 0;
+            // Check if we need to borrow
+            if (result.limbs[i] < b_limb + borrow) {
+                result.limbs[i] = result.limbs[i] + (UINT64_MAX - b_limb - borrow + 1);
+                borrow = 1;
+            } else {
+                result.limbs[i] = result.limbs[i] - b_limb - borrow;
+                borrow = 0;
+            }
+        }
+        
+        result.normalize();
+        return result;
+    }
+
+    //Multiplication (a * b) - Grade School O(n^2)
+    friend BigInt operator*(const BigInt& a, const BigInt& b) {
+        if (a.is_zero() || b.is_zero()) return BigInt(0);
+        
+        BigInt result;
+        result.limbs.assign(a.limbs.size() + b.limbs.size(), 0);
+
+        for (size_t i = 0; i < a.limbs.size(); ++i) {
+            uint64_t carry = 0;
+            for (size_t j = 0; j < b.limbs.size(); ++j) {
+                #if defined(__GNUC__) || defined(__clang__)
+                // GCC/Clang path using native 128-bit type
+                __uint128_t product = (__uint128_t)a.limbs[i] * b.limbs[j] + 
+                                      result.limbs[i + j] + carry;
+                
+                result.limbs[i + j] = (uint64_t)product;
+                carry = (uint64_t)(product >> 64);
+                #else
+                // MSVC path using the struct and static helpers
+                uint128_t product = uint128_t::mul_u64(a.limbs[i], b.limbs[j]);
+                product = uint128_t::add_u128_u64(product, result.limbs[i + j]);
+                product = uint128_t::add_u128_u64(product, carry);
+
+                result.limbs[i + j] = product.lo;
+                carry = product.hi;
+                #endif
+            }
+            if (carry > 0) {
+                result.limbs[i + b.limbs.size()] += carry;
+            }
         }
         result.normalize();
         return result;
     }
 
-    // Multiplication (a * b) - Grade School O(n^2)
-    // friend BigInt operator*(const BigInt& a, const BigInt& b) {
-    //     if (a.is_zero() || b.is_zero()) return BigInt(0);
-        
-    //     BigInt result;
-    //     result.limbs.resize(a.limbs.size() + b.limbs.size(), 0);
-
-    //     for (size_t i = 0; i < a.limbs.size(); ++i) {
-    //         uint64_t carry = 0;
-    //         for (size_t j = 0; j < b.limbs.size() || carry; ++j) {
-    //             uint64_t b_limb = (j < b.limbs.size()) ? b.limbs[j] : 0;
-                
-    //             // Use 128-bit math to hold the product
-    //             uint128_t product = (uint128_t)a.limbs[i] * b_limb + 
-    //                                 result.limbs[i + j] + carry;
-                
-    //             result.limbs[i + j] = (uint64_t)product; // Lower 64 bits
-    //             carry = (uint64_t)(product >> 64);      // Upper 64 bits
-    //         }
-    //     }
-    //     result.normalize();
-    //     return result;
-    // }
     
     // Division and Modulo (a / b) and (a % b)
     // Returns {quotient, remainder}
-    static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
-        if (divisor_in.is_zero()) throw std::runtime_error("Division by zero");
-        
-        BigInt quotient(0);
-        BigInt remainder(0);
-        BigInt dividend = dividend_in;
-        BigInt divisor = divisor_in;
-
+    static std::pair<BigInt, BigInt> divmod(const BigInt& dividend, const BigInt& divisor) {
+        if (divisor.is_zero()) {
+            throw std::invalid_argument("Division by zero");
+        }
         if (dividend < divisor) {
             return {BigInt(0), dividend};
         }
 
-        // Binary Long Division (a simpler, but not fastest, approach)
-        // Find the highest power of 2 to multiply the divisor by
-        BigInt temp_divisor = divisor;
-        BigInt power_of_two(1);
-        
-        while (temp_divisor <= dividend) {
-            temp_divisor = temp_divisor << 1;
-            power_of_two = power_of_two << 1;
-        }
-        
-        // Now walk back down
-        temp_divisor = temp_divisor >> 1;
-        power_of_two = power_of_two >> 1;
+        BigInt remainder = dividend;
+        BigInt quotient(0);
 
-        remainder = dividend;
-        while (!power_of_two.is_zero()) {
-            if (remainder >= temp_divisor) {
-                remainder = remainder - temp_divisor;
-                quotient = quotient + power_of_two;
+        size_t shift = remainder.bit_length() - divisor.bit_length();
+        BigInt shifted = divisor << shift;
+
+        for (size_t i = shift + 1; i-- > 0;) {
+            if (!(remainder < shifted)) {
+                remainder = remainder - shifted;
+                quotient = quotient + (BigInt(1) << i);
             }
-            temp_divisor = temp_divisor >> 1;
-            power_of_two = power_of_two >> 1;
+            shifted = shifted >> 1;
         }
-
-        quotient.normalize();
         remainder.normalize();
+        quotient.normalize();
         return {quotient, remainder};
     }
+    // static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
+    //     if (divisor_in.is_zero()) 
+    //         throw std::runtime_error("Division by zero");
+    //     //Res
+    //     BigInt quotient(0);
+    //     BigInt remainder(0);
+    //     //Make copy
+    //     BigInt dividend = dividend_in;
+    //     BigInt divisor = divisor_in;
+
+    //     if (dividend < divisor) {
+    //         return {BigInt(0), dividend};
+    //     }
+
+    //     // Binary Long Division (a simpler, but not fastest, approach)
+    //     // Find the highest power of 2 to multiply the divisor by
+    //     // divisor = 2^s . d 
+    //         //d -> odd
+    //         //s -> N
+    //     BigInt temp_divisor = divisor;
+    //     BigInt power_of_two(1); //0000 0001
+        
+    //     while (temp_divisor <= dividend) {
+    //         temp_divisor = temp_divisor << 1; //Find biggest even num (= 2^x * divisor) only after (>) the dividend 
+    //         power_of_two = power_of_two << 1; //2^x
+    //     }
+        
+    //     // Now walk back down
+    //     temp_divisor = temp_divisor >> 1;
+    //     power_of_two = power_of_two >> 1;
+
+    //     //Dividend = 2^x * divisor + remainder
+    //     //           |               |
+    //     //           --> quotient    --> remainder
+    //     remainder = dividend;
+    //     while (!power_of_two.is_zero()) {
+    //         if (remainder >= temp_divisor) {
+    //             remainder = remainder - temp_divisor;   
+    //             quotient = quotient + power_of_two;
+    //         }
+    //         temp_divisor = temp_divisor >> 1;
+    //         power_of_two = power_of_two >> 1;
+    //     }
+
+    //     quotient.normalize();
+    //     remainder.normalize();
+    //     return {quotient, remainder};
+    // }
 
     friend BigInt operator/(const BigInt& a, const BigInt& b) {
         return divmod(a, b).first;
@@ -331,19 +457,4 @@ std::string readFile(const std::string& filename) {
     return le_hex_str;
 }
 
-// --- Main Program ---
-int main() {
-    std::string str1 = readFile("test\\project_01_01\\test_00.inp");
-    std::string str2 = readFile("test\\project_01_01\\test_01.inp");
-    if (str1.empty()) {
-        std::cerr << "Error: test.inp is empty." << std::endl;
-        return 1;
-    }
-    BigInt n(parse_little_endian_hex(str1));
-    BigInt m(parse_little_endian_hex(str2));
-
-    n = n + m;
-    n.print_hex();
-
-    return 0;
-}
+#endif // HELPER_H

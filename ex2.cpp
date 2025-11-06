@@ -2,95 +2,49 @@
 #include <string>   // Dùng cho std::string
 #include <sstream>  // Dùng cho std::stringstream
 #include <iomanip>  // Dùng cho std::hex, std::uppercase, std::setfill, std::setw
+#include "bigInt.h"
 
-/**
- * @brief Tính toán Thuật toán Euclid Mở rộng.
- * * Tìm x và y sao cho ax + by = gcd(a, b).
- * Trong bối cảnh của RSA, chúng ta tìm d và k sao cho ed + k*phi = gcd(e, phi).
- * * @param a Số thứ nhất (e trong RSA)
- * @param b Số thứ hai (phi trong RSA)
- * @param x Tham chiếu để lưu trữ hệ số của a (sẽ là d)
- * @param y Tham chiếu để lưu trữ hệ số của b (sẽ là k)
- * @return long long Giá trị gcd(a, b).
- */
-long long extendedEuclidean(long long a, long long b, long long &x, long long &y) {
-    if (b == 0) {
-        x = 1;
-        y = 0;
-        return a;
+// --- Bezout Algorithm ---
+
+SignedBigInt bezout(const SignedBigInt& a, const SignedBigInt& b, SignedBigInt& x, SignedBigInt& y) {
+    SignedBigInt m0 = a, n0 = b;
+    SignedBigInt x0 = SignedBigInt(1), y0 = SignedBigInt(0);
+    SignedBigInt x1 = SignedBigInt(0), y1 = SignedBigInt(1);
+    while (n0 != SignedBigInt(0)) {
+        SignedBigInt q = m0 / n0;
+        SignedBigInt r = m0 % n0;
+        SignedBigInt xr = x0 - q * x1, yr = y0 - q * y1;
+        m0 = n0;
+        n0 = r;
+        x0 = x1;
+        y0 = y1;
+        x1 = xr;
+        y1 = yr;
     }
-    long long x1, y1;
-    long long gcd = extendedEuclidean(b, a % b, x1, y1);
-    x = y1;
-    y = x1 - (a / b) * y1;
-    return gcd;
+    x = x0;
+    y = y0;
+    return m0;
 }
 
-/**
- * @brief Chuyển đổi một số nguyên thành chuỗi hex in hoa, dạng little-endian.
- * * Ví dụ: 1234 (decimal) = 0x04D2 (hex)
- * Dạng little-endian: D204
- * * @param n Số nguyên dương để chuyển đổi.
- * @return std::string Chuỗi hex đã định dạng.
- */
-std::string toLittleEndianHex(long long n) {
-    std::stringstream ss;
-    // Cấu hình stringstream để xuất hex, in hoa, và đệm bằng '0'
-    ss << std::hex << std::uppercase << std::setfill('0');
-    
-    if (n == 0) {
-        return "00";
-    }
 
-    long long temp = n;
-    // Lấy từng byte (8 bit) từ LSB (byte thấp nhất) đến MSB (byte cao nhất)
-    while (temp > 0) {
-        // Lấy 8 bit cuối cùng (tương đương 1 byte)
-        int byte = temp & 0xFF; 
-        
-        // Đặt chiều rộng là 2 và in byte đó (ví dụ: 5 -> "05")
-        ss << std::setw(2) << byte;
-        
-        // Dịch phải 8 bit để lấy byte tiếp theo trong vòng lặp sau
-        temp >>= 8;
-    }
-    
-    return ss.str();
-}
 
-int main() {
-    long long p, q, e;
-
-    // Đọc 3 dòng đầu vào
-    std::cin >> p >> q >> e;
-
-    // 1. Tính phi(N) = (p - 1) * (q - 1)
-    // Dùng __int128_t nếu p, q lớn, nhưng theo ràng buộc thư viện C++17 chuẩn
-    // chúng ta giả định long long là đủ.
-    long long phi = (p - 1) * (q - 1);
-
-    // 2. Tìm d bằng Thuật toán Euclid Mở rộng
-    long long d, k; // d và k là các giá trị x, y từ thuật toán
-    long long gcd = extendedEuclidean(e, phi, d, k);
-
-    // 3. Kiểm tra điều kiện
-    // Nghịch đảo modular (d) chỉ tồn tại nếu e và phi là nguyên tố cùng nhau
-    // tức là gcd(e, phi) == 1.
-    if (gcd != 1) {
-        std::cout << -1 << std::endl;
-        return 0;
-    }
-
-    // 4. Tìm giá trị d dương nhỏ nhất
-    // Kết quả 'd' từ EEA có thể là số âm.
-    // Chúng ta cần tìm d' nhỏ nhất trong [1, phi-1] sao cho d' = d (mod phi).
-    // Phép toán (d % phi + phi) % phi đảm bảo kết quả luôn là số dương.
-    long long positive_d = (d % phi + phi) % phi;
-
-    // 5. Chuyển đổi d sang dạng hex little-endian và in ra
-    std::string hex_d = toLittleEndianHex(positive_d);
-    
-    std::cout << hex_d << std::endl;
-
+int main(){
+    SignedBigInt a(BigInt("65"));
+    SignedBigInt b(BigInt("17"));
+    SignedBigInt one(BigInt(1));
+    SignedBigInt phi = (a - one) * (b - one);
+    std::cout << "a - 1: " << (a - one).to_hex_string() << std::endl;
+    std::cout << "b - 1: " << (b - one).to_hex_string() << std::endl;
+    std::cout << "a: " << a.to_hex_string() << std::endl;
+    std::cout << "b: " << b.to_hex_string() << std::endl;
+    std::cout << "phi: " << phi.to_hex_string() << std::endl;
+    SignedBigInt e(BigInt("21"));
+    SignedBigInt x, y;
+    SignedBigInt gcd = bezout(e, phi, x, y);
+    std::cout << "original x: " << x.to_hex_string() << std::endl;
+    x = ((x % phi) + phi) % phi;
+    std::cout << "GCD: " << gcd.to_hex_string() << std::endl;
+    std::cout << "x: " << x.to_hex_string() << std::endl;
+    std::cout << "y: " << y.to_hex_string() << std::endl;
     return 0;
 }

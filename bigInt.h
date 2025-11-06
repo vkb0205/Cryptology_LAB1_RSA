@@ -318,79 +318,79 @@ public:
     
     // Division and Modulo (a / b) and (a % b)
     // Returns {quotient, remainder}
-    static std::pair<BigInt, BigInt> divmod(const BigInt& dividend, const BigInt& divisor) {
-        if (divisor.is_zero()) {
-            throw std::invalid_argument("Division by zero");
-        }
-        if (dividend < divisor) {
-            return {BigInt(0), dividend};
-        }
-
-        BigInt remainder = dividend;
-        BigInt quotient(0);
-
-        size_t shift = remainder.bit_length() - divisor.bit_length();
-        BigInt shifted = divisor << shift;
-
-        for (size_t i = shift + 1; i-- > 0;) {
-            if (!(remainder < shifted)) {
-                remainder = remainder - shifted;
-                quotient = quotient + (BigInt(1) << i);
-            }
-            shifted = shifted >> 1;
-        }
-        remainder.normalize();
-        quotient.normalize();
-        return {quotient, remainder};
-    }
-    // static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
-    //     if (divisor_in.is_zero()) 
-    //         throw std::runtime_error("Division by zero");
-    //     //Res
-    //     BigInt quotient(0);
-    //     BigInt remainder(0);
-    //     //Make copy
-    //     BigInt dividend = dividend_in;
-    //     BigInt divisor = divisor_in;
-
+    // static std::pair<BigInt, BigInt> divmod(const BigInt& dividend, const BigInt& divisor) {
+    //     if (divisor.is_zero()) {
+    //         throw std::invalid_argument("Division by zero");
+    //     }
     //     if (dividend < divisor) {
     //         return {BigInt(0), dividend};
     //     }
 
-    //     // Binary Long Division (a simpler, but not fastest, approach)
-    //     // Find the highest power of 2 to multiply the divisor by
-    //     // divisor = 2^s . d 
-    //         //d -> odd
-    //         //s -> N
-    //     BigInt temp_divisor = divisor;
-    //     BigInt power_of_two(1); //0000 0001
-        
-    //     while (temp_divisor <= dividend) {
-    //         temp_divisor = temp_divisor << 1; //Find biggest even num (= 2^x * divisor) only after (>) the dividend 
-    //         power_of_two = power_of_two << 1; //2^x
-    //     }
-        
-    //     // Now walk back down
-    //     temp_divisor = temp_divisor >> 1;
-    //     power_of_two = power_of_two >> 1;
+    //     BigInt remainder = dividend;
+    //     BigInt quotient(0);
 
-    //     //Dividend = 2^x * divisor + remainder
-    //     //           |               |
-    //     //           --> quotient    --> remainder
-    //     remainder = dividend;
-    //     while (!power_of_two.is_zero()) {
-    //         if (remainder >= temp_divisor) {
-    //             remainder = remainder - temp_divisor;   
-    //             quotient = quotient + power_of_two;
+    //     size_t shift = remainder.bit_length() - divisor.bit_length();
+    //     BigInt shifted = divisor << shift;
+
+    //     for (size_t i = shift + 1; i-- > 0;) {
+    //         if (!(remainder < shifted)) {
+    //             remainder = remainder - shifted;
+    //             quotient = quotient + (BigInt(1) << i);
     //         }
-    //         temp_divisor = temp_divisor >> 1;
-    //         power_of_two = power_of_two >> 1;
+    //         shifted = shifted >> 1;
     //     }
-
-    //     quotient.normalize();
     //     remainder.normalize();
+    //     quotient.normalize();
     //     return {quotient, remainder};
     // }
+    static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
+        if (divisor_in.is_zero()) 
+            throw std::runtime_error("Division by zero");
+        //Res
+        BigInt quotient(0);
+        BigInt remainder(0);
+        //Make copy
+        BigInt dividend = dividend_in;
+        BigInt divisor = divisor_in;
+
+        if (dividend < divisor) {
+            return {BigInt(0), dividend};
+        }
+
+        // Binary Long Division (a simpler, but not fastest, approach)
+        // Find the highest power of 2 to multiply the divisor by
+        // divisor = 2^s . d 
+            //d -> odd
+            //s -> N
+        BigInt temp_divisor = divisor;
+        BigInt power_of_two(1); //0000 0001
+        
+        while (temp_divisor <= dividend) {
+            temp_divisor = temp_divisor << 1; //Find biggest even num (= 2^x * divisor) only after (>) the dividend 
+            power_of_two = power_of_two << 1; //2^x
+        }
+        
+        // Now walk back down
+        temp_divisor = temp_divisor >> 1;
+        power_of_two = power_of_two >> 1;
+
+        //Dividend = 2^x * divisor + remainder
+        //           |               |
+        //           --> quotient    --> remainder
+        remainder = dividend;
+        while (!power_of_two.is_zero()) {
+            if (remainder >= temp_divisor) {
+                remainder = remainder - temp_divisor;   
+                quotient = quotient + power_of_two;
+            }
+            temp_divisor = temp_divisor >> 1;
+            power_of_two = power_of_two >> 1;
+        }
+
+        quotient.normalize();
+        remainder.normalize();
+        return {quotient, remainder};
+    }
 
     friend BigInt operator/(const BigInt& a, const BigInt& b) {
         return divmod(a, b).first;
@@ -430,19 +430,34 @@ public:
  * @brief Parses a little-endian hex string into a big-endian hex string.
  * "A1B2C3D4" (bytes A1, B2, C3, D4) -> "D4C3B2A1"
  */
+// std::string parse_little_endian_hex(const std::string& le_hex) {
+//     if (le_hex.length() % 2 != 0) {
+//         throw std::runtime_error("Input hex string has odd length.");
+//     }
+//     std::string be_hex;
+//     // Reserve space for the new string
+//     be_hex.reserve(le_hex.length());
+    
+//     // Iterate from the end, taking 2-char (byte) chunks
+//     for (int i = le_hex.length() - 2; i >= 0; i -= 2) {
+//         be_hex.push_back(le_hex[i]);
+//         be_hex.push_back(le_hex[i + 1]);
+//     }
+//     //DEBUG
+//     std::cout << "DEBUG: LE '" << le_hex << "' --> BE '" << be_hex << "'\n";  // ← ADD THIS
+//     return be_hex;
+// }
+
+//Newer version for parser
 std::string parse_little_endian_hex(const std::string& le_hex) {
     if (le_hex.length() % 2 != 0) {
         throw std::runtime_error("Input hex string has odd length.");
     }
-    std::string be_hex;
-    // Reserve space for the new string
-    be_hex.reserve(le_hex.length());
     
-    // Iterate from the end, taking 2-char (byte) chunks
-    for (int i = le_hex.length() - 2; i >= 0; i -= 2) {
-        be_hex.push_back(le_hex[i]);
-        be_hex.push_back(le_hex[i + 1]);
-    }
+    // Simply reverse the entire string
+    std::string be_hex(le_hex.rbegin(), le_hex.rend());
+    
+    std::cout << "DEBUG: LE '" << le_hex << "' --> BE '" << be_hex << "'\n";
     return be_hex;
 }
 

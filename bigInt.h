@@ -475,7 +475,7 @@ public:
         return a.neg == b.neg && a.mag == b.mag;
     }
     friend bool operator!=(const SignedBigInt &a, const SignedBigInt &b) { return !(a == b); }
-    
+
     friend bool operator<(const SignedBigInt &a, const SignedBigInt &b) {
         if (a.neg != b.neg) return a.neg; // negative < non-negative
         if (!a.neg) return a.mag < b.mag;  // both non-negative
@@ -570,9 +570,6 @@ public:
 };
 
 std::string parse_little_endian_hex(const std::string& le_hex) {
-    if (le_hex.length() % 2 != 0) {
-        throw std::runtime_error("Input hex string has odd length.");
-    }
     
     // Simply reverse the entire string
     std::string be_hex(le_hex.rbegin(), le_hex.rend());

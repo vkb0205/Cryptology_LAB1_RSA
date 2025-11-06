@@ -1,62 +1,62 @@
 #include "miller_rabin.h"
 
-int main() {
-    // --- Test Basic BigInt Arithmetic First ---
-    std::cout << "--- Testing Basic BigInt Operations ---\n";
+// int main() {
+//     // --- Test Basic BigInt Arithmetic First ---
+//     std::cout << "--- Testing Basic BigInt Operations ---\n";
     
-    // Test 1: Multiplication
-    BigInt a("10000000000000000"); // 2^64
-    BigInt b("2");
-    BigInt product = a * b;
-    std::cout << "Test Mul: 2^64 * 2 = ";
-    product.print_hex();
-    // Expected: 0x20000000000000000
+//     // Test 1: Multiplication
+//     BigInt a("10000000000000000"); // 2^64
+//     BigInt b("2");
+//     BigInt product = a * b;
+//     std::cout << "Test Mul: 2^64 * 2 = ";
+//     product.print_hex();
+//     // Expected: 0x20000000000000000
     
-    // Test 2: Modulo with detailed debug
-    std::cout << "\n=== Detailed Debug for 17 % 5 ===\n";
-    BigInt c("11");  // 17
-    BigInt d("5");   // 5
+//     // Test 2: Modulo with detailed debug
+//     std::cout << "\n=== Detailed Debug for 17 % 5 ===\n";
+//     BigInt c("11");  // 17
+//     BigInt d("5");   // 5
     
-    std::cout << "c (17) = "; c.print_hex();
-    std::cout << "d (5) = "; d.print_hex();
+//     std::cout << "c (17) = "; c.print_hex();
+//     std::cout << "d (5) = "; d.print_hex();
     
-    // Test subtraction directly
-    BigInt test_sub = c - d;
-    std::cout << "17 - 5 = "; test_sub.print_hex();
+//     // Test subtraction directly
+//     BigInt test_sub = c - d;
+//     std::cout << "17 - 5 = "; test_sub.print_hex();
     
-    BigInt test_sub2 = test_sub - d;
-    std::cout << "12 - 5 = "; test_sub2.print_hex();
+//     BigInt test_sub2 = test_sub - d;
+//     std::cout << "12 - 5 = "; test_sub2.print_hex();
     
-    BigInt test_sub3 = test_sub2 - d;
-    std::cout << "7 - 5 = "; test_sub3.print_hex();
+//     BigInt test_sub3 = test_sub2 - d;
+//     std::cout << "7 - 5 = "; test_sub3.print_hex();
     
-    auto [q, r] = BigInt::divmod(c, d);
-    std::cout << "Debug: 17 / 5 = quotient: ";
-    q.print_hex();
-    std::cout << "Debug: 17 / 5 = remainder: ";
-    r.print_hex();
-    BigInt mod = c % d;
-    std::cout << "Test Mod: 17 % 5 = ";
-    mod.print_hex();
-    std::cout << "===================================\n\n";
-// ...existing code...
+//     auto [q, r] = BigInt::divmod(c, d);
+//     std::cout << "Debug: 17 / 5 = quotient: ";
+//     q.print_hex();
+//     std::cout << "Debug: 17 / 5 = remainder: ";
+//     r.print_hex();
+//     BigInt mod = c % d;
+//     std::cout << "Test Mod: 17 % 5 = ";
+//     mod.print_hex();
+//     std::cout << "===================================\n\n";
+// // ...existing code...
     
-    // Test 3: Power Mod
-    BigInt base("2");
-    BigInt exp("A");
-    BigInt modulus("3E8");
-    BigInt result = powMod_big(base, exp, modulus);
-    std::cout << "Test PowMod: 2^10 % 1000 = ";
-    result.print_hex();
-    // Expected: 0x18 (24 decimal, since 1024 % 1000 = 24)
+//     // Test 3: Power Mod
+//     BigInt base("2");
+//     BigInt exp("A");
+//     BigInt modulus("3E8");
+//     BigInt result = powMod_big(base, exp, modulus);
+//     std::cout << "Test PowMod: 2^10 % 1000 = ";
+//     result.print_hex();
+//     // Expected: 0x18 (24 decimal, since 1024 % 1000 = 24)
     
-    std::cout << "\n";
+//     std::cout << "\n";
 
-    // --- Test with BigInt ---
-    std::cout << "--- Testing BigInt Miller-Rabin ---\n";
-// ...existing code...
-    return 0;
-}
+//     // --- Test with BigInt ---
+//     std::cout << "--- Testing BigInt Miller-Rabin ---\n";
+// // ...existing code...
+//     return 0;
+// }
 
 // int main() {
 //     struct Case { BigInt n; bool prime; };
@@ -93,3 +93,12 @@ int main() {
 //     }
 //     return failures ? 1 : 0;
 // }
+
+int main() {
+    BigInt k("B");
+    BigInt x("1F");
+    BigInt y("6AF");
+    BigInt res = powMod_big(x, k, y);
+    res.print_hex();
+    return 0;
+}

@@ -430,25 +430,145 @@ public:
  * @brief Parses a little-endian hex string into a big-endian hex string.
  * "A1B2C3D4" (bytes A1, B2, C3, D4) -> "D4C3B2A1"
  */
-// std::string parse_little_endian_hex(const std::string& le_hex) {
-//     if (le_hex.length() % 2 != 0) {
-//         throw std::runtime_error("Input hex string has odd length.");
-//     }
-//     std::string be_hex;
-//     // Reserve space for the new string
-//     be_hex.reserve(le_hex.length());
-    
-//     // Iterate from the end, taking 2-char (byte) chunks
-//     for (int i = le_hex.length() - 2; i >= 0; i -= 2) {
-//         be_hex.push_back(le_hex[i]);
-//         be_hex.push_back(le_hex[i + 1]);
-//     }
-//     //DEBUG
-//     std::cout << "DEBUG: LE '" << le_hex << "' --> BE '" << be_hex << "'\n";  // ← ADD THIS
-//     return be_hex;
-// }
 
-//Newer version for parser
+/**
+ * @brief Minimal signed wrapper around the existing unsigned BigInt.
+ *
+ * Motivation: the extended Euclidean algorithm (Bezout) produces signed
+ * coefficients (s, t) even when inputs a,b are non-negative. Your
+ * BigInt is currently unsigned-only, so we keep the magnitude in
+ * BigInt and track the sign separately. This is a small, safe change
+ * that avoids rewriting the whole BigInt implementation.
+ */
+/**
+ * Full SignedBigInt built on top of the existing unsigned BigInt.
+ * Provides arithmetic (+, -, *, /, %), comparisons and printing.
+ * Division follows C++ semantics (quotient truncated toward zero,
+ * remainder has same sign as numerator).
+ */
+class SignedBigInt {
+public:
+    BigInt mag; // magnitude (absolute value)
+    bool neg;   // sign flag; false means non-negative
+
+    // --- Constructors ---
+    SignedBigInt() : mag(0), neg(false) {}
+    SignedBigInt(const BigInt &m, bool s = false) : mag(m), neg(s && !m.is_zero()) { normalize(); }
+    SignedBigInt(int64_t v) {
+        if (v < 0) { neg = true; mag = BigInt(static_cast<uint64_t>(-v)); }
+        else { neg = false; mag = BigInt(static_cast<uint64_t>(v)); }
+    }
+    SignedBigInt(const std::string &hex_be) : mag(hex_be), neg(false) { normalize(); }
+
+    void normalize() { if (mag.is_zero()) neg = false; }
+
+    bool is_zero() const { return mag.is_zero(); }
+
+    // Absolute value
+    BigInt abs() const { return mag; }
+
+    // Unary minus
+    SignedBigInt operator-() const { SignedBigInt r = *this; if (!r.mag.is_zero()) r.neg = !r.neg; return r; }
+
+    // --- Comparisons ---
+    friend bool operator==(const SignedBigInt &a, const SignedBigInt &b) {
+        return a.neg == b.neg && a.mag == b.mag;
+    }
+    friend bool operator!=(const SignedBigInt &a, const SignedBigInt &b) { return !(a == b); }
+    
+    friend bool operator<(const SignedBigInt &a, const SignedBigInt &b) {
+        if (a.neg != b.neg) return a.neg; // negative < non-negative
+        if (!a.neg) return a.mag < b.mag;  // both non-negative
+        // both negative: larger magnitude -> smaller value
+        return b.mag < a.mag;
+    }
+    friend bool operator>(const SignedBigInt &a, const SignedBigInt &b) { return b < a; }
+    friend bool operator<=(const SignedBigInt &a, const SignedBigInt &b) { return !(a > b); }
+    friend bool operator>=(const SignedBigInt &a, const SignedBigInt &b) { return !(a < b); }
+
+    // --- Addition / Subtraction ---
+    friend SignedBigInt operator+(const SignedBigInt &a, const SignedBigInt &b) {
+        SignedBigInt r;
+        if (a.neg == b.neg) {
+            r.mag = a.mag + b.mag;
+            r.neg = a.neg && !r.mag.is_zero();
+        } else {
+            if (a.mag >= b.mag) {
+                r.mag = a.mag - b.mag;
+                r.neg = a.neg && !r.mag.is_zero();
+            } else {
+                r.mag = b.mag - a.mag;
+                r.neg = b.neg && !r.mag.is_zero();
+            }
+        }
+        r.normalize();
+        return r;
+    }
+    friend SignedBigInt operator-(const SignedBigInt &a, const SignedBigInt &b) { return a + (-b); }
+
+    SignedBigInt &operator+=(const SignedBigInt &o) { *this = *this + o; return *this; }
+    SignedBigInt &operator-=(const SignedBigInt &o) { *this = *this - o; return *this; }
+
+    // --- Multiplication ---
+    friend SignedBigInt operator*(const SignedBigInt &a, const SignedBigInt &b) {
+        SignedBigInt r;
+        r.mag = a.mag * b.mag;
+        r.neg = (a.neg != b.neg) && !r.mag.is_zero();
+        r.normalize();
+        return r;
+    }
+    SignedBigInt &operator*=(const SignedBigInt &o) { *this = *this * o; return *this; }
+
+    // --- Division / Modulo ---
+    // Division truncates toward zero (C/C++ semantics). Remainder has same sign as numerator.
+    friend SignedBigInt operator/(const SignedBigInt &a, const SignedBigInt &b) {
+        if (b.mag.is_zero()) throw std::invalid_argument("Division by zero");
+        SignedBigInt r;
+        BigInt q = a.mag / b.mag; // quotient magnitude (non-negative)
+        r.mag = q;
+        r.neg = (a.neg != b.neg) && !r.mag.is_zero();
+        r.normalize();
+        return r;
+    }
+    friend SignedBigInt operator%(const SignedBigInt &a, const SignedBigInt &b) {
+        if (b.mag.is_zero()) throw std::invalid_argument("Modulo by zero");
+        SignedBigInt r;
+        BigInt rem = a.mag % b.mag; // remainder magnitude >= 0
+        r.mag = rem;
+        // remainder sign follows numerator (a)
+        r.neg = a.neg && !r.mag.is_zero();
+        r.normalize();
+        return r;
+    }
+    SignedBigInt &operator/=(const SignedBigInt &o) { *this = *this / o; return *this; }
+    SignedBigInt &operator%=(const SignedBigInt &o) { *this = *this % o; return *this; }
+
+    // Mixed operations with unsigned BigInt
+    friend SignedBigInt operator*(const SignedBigInt &a, const BigInt &b) {
+        SignedBigInt r; r.mag = a.mag * b; r.neg = a.neg && !r.mag.is_zero(); r.normalize(); return r;
+    }
+    friend SignedBigInt operator*(const BigInt &b, const SignedBigInt &a) { return a * b; }
+
+    friend SignedBigInt operator+(const SignedBigInt &a, const BigInt &b) { return a + SignedBigInt(b, false); }
+    friend SignedBigInt operator-(const SignedBigInt &a, const BigInt &b) { return a - SignedBigInt(b, false); }
+    friend SignedBigInt operator/(const SignedBigInt &a, const BigInt &b) { return a / SignedBigInt(b, false); }
+    friend SignedBigInt operator%(const SignedBigInt &a, const BigInt &b) { return a % SignedBigInt(b, false); }
+
+    // --- Utilities ---
+    // Print as hex with optional leading '-' for negative values
+    void print_hex() const {
+        if (is_zero()) { std::cout << "0x0" << std::endl; return; }
+        if (neg) std::cout << '-';
+        mag.print_hex();
+    }
+
+    std::string to_hex_string() const {
+        std::string s = (neg ? std::string("-") : std::string(""));
+        s += mag.to_hex_string();
+        return s;
+    }
+};
+
 std::string parse_little_endian_hex(const std::string& le_hex) {
     if (le_hex.length() % 2 != 0) {
         throw std::runtime_error("Input hex string has odd length.");

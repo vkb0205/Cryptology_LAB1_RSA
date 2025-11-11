@@ -2,8 +2,6 @@
 #ifndef HELPER_H
 #define HELPER_H
 
-#include <string>
-
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -44,14 +42,13 @@ struct uint128_t {
 };
 #endif
 
-
 /**
- * @brief Layer 1: The BigInt Class
- * Stores a large unsigned integer as a vector of 64-bit "limbs".
+ * @brief The BigInt Class
+ * Stores a signed integer as a vector of 64-bit "limbs" (magnitude) + a sign flag.
  * Limbs are little-endian (limbs[0] is the least significant).
  */
 class BigInt {
-private: 
+private:
     static unsigned count_leading_zeros(uint64_t limb) {
     #if defined(_MSC_VER) && !defined(__clang__)
         unsigned long idx;
@@ -68,15 +65,26 @@ private:
         uint64_t v = limbs[ms];
         return ms * 64 + (64 - count_leading_zeros(v));
     }
+
 public:
-    std::vector<uint64_t> limbs;
+    std::vector<uint64_t> limbs; // magnitude (always non-negative)
+    bool neg;                     // sign flag; false means non-negative, true means negative
 
     // --- Constructors ---
-    BigInt() { limbs.push_back(0); } // Default constructor (value 0)
-    BigInt(uint64_t n) { limbs.push_back(n); normalize(); } // From int
+    BigInt() : neg(false) { limbs.push_back(0); }
+    BigInt(int64_t v) : neg(v < 0) {
+        if (v < 0) {
+            neg = true;
+            limbs.push_back(-v);
+        } else {
+            neg = false;
+            limbs.push_back(v);
+        }
+        normalize();
+    }
 
-    // Constructor from a big-endian hex string
-    BigInt(const std::string& hex_str) {
+    // Constructor from a big-endian hex string (unsigned interpretation)
+    BigInt(const std::string& hex_str) : neg(false) {
         if (hex_str.empty()) {
             limbs.push_back(0);
             return;
@@ -116,6 +124,7 @@ public:
         normalize();
     }
 
+    // --- Conversion Functions ---
     uint64_t to_uint64() const {
         if (limbs.empty()) {
             return 0;
@@ -128,10 +137,18 @@ public:
         return limbs[0];
     }
 
+    //TODO: Conversion Overflow Handling
+    // int64_t to_int64() const {
+    //     uint64_t uval = to_uint64();
+    //     int64_t ival = static_cast<int64_t>(uval); <-- Potential overflow here
+    //     return neg ? -ival : ival;
+    // }
+
     std::string to_hex_string() const {
         std::ostringstream oss;
         oss << std::hex << std::nouppercase;
         if (limbs.empty()) return "0";
+        if (neg) oss << "-";
         oss << limbs.back();
         for (size_t i = limbs.size(); i-- > 1;) {
             oss << std::setw(16) << std::setfill('0') << limbs[i - 1];
@@ -140,11 +157,9 @@ public:
     }
 
     // --- Helper Functions ---
-    //Trimming leading zero limbs
     void normalize() {
-        while (limbs.size() > 1 && limbs.back() == 0) {
-            limbs.pop_back();
-        }
+        while (limbs.size() > 1 && limbs.back() == 0) limbs.pop_back(); //Trimming leading zero limbs
+        if (limbs.size() == 1 && limbs[0] == 0) neg = false;
     }
     
     bool is_zero() const {
@@ -155,32 +170,59 @@ public:
         return (limbs[0] & 1) == 0;
     }
 
+    BigInt abs() const {
+        return BigInt(*this).set_positive();
+    }
+
+    BigInt& set_positive() {
+        neg = false;
+        return *this;
+    }
+    
+    BigInt& set_negative() {
+        if (!is_zero()) neg = true;
+        return *this;
+    }
+
+    // --- Unary Minus ---
+    BigInt operator-() const {
+        BigInt result = *this;
+        if (!result.is_zero()) result.neg = !result.neg;
+        return result;
+    }
+
     // --- Comparison Operators ---
     friend bool operator==(const BigInt& a, const BigInt& b) {
-        return a.limbs == b.limbs;
+        return a.limbs == b.limbs && a.neg == b.neg;
     }
     friend bool operator!=(const BigInt& a, const BigInt& b) {
-        return a.limbs != b.limbs;
+        return !(a == b);
     }
     friend bool operator<(const BigInt& a, const BigInt& b) {
+        if (a.neg != b.neg) return a.neg > b.neg;
+        
+        bool less_unsigned = false;
         if (a.limbs.size() != b.limbs.size()) {
-            return a.limbs.size() < b.limbs.size();
+            less_unsigned = (a.limbs.size() < b.limbs.size());
         }
-        for (int i = a.limbs.size() - 1; i >= 0; --i) {
-            if (a.limbs[i] != b.limbs[i]) {
-                return a.limbs[i] < b.limbs[i];
+        else {
+            if (a.limbs == b.limbs) return false;
+            for (int i = a.limbs.size() - 1; i >= 0; --i) {
+                if (a.limbs[i] != b.limbs[i]) {
+                    less_unsigned = a.limbs[i] < b.limbs[i];
+                    break;
+                }
             }
         }
-        return false; // They are equal
+        return a.neg ? !less_unsigned : less_unsigned;
     }
     friend bool operator>(const BigInt& a, const BigInt& b) { return b < a; }
     friend bool operator<=(const BigInt& a, const BigInt& b) { return !(a > b); }
     friend bool operator>=(const BigInt& a, const BigInt& b) { return !(a < b); }
 
-    // --- Bitwise Shift Operators (Needed for Division) ---
+    // --- Bitwise Shift Operators ---
     friend BigInt operator<<(const BigInt& a, size_t shift_bits) {
         BigInt result = a;
-        //130 / 64 = 2, r = 2
         size_t shift_limbs = shift_bits / 64;
         size_t inner_shift = shift_bits % 64;
 
@@ -221,66 +263,88 @@ public:
         return result;
     }
 
-    // --- Layer 2: Core Arithmetic ---
-
+    // --- Arithmetic Operators ---
     friend BigInt operator+(const BigInt& a, const BigInt& b) {
-        BigInt result;
-        size_t n = std::max(a.limbs.size(), b.limbs.size());
-        result.limbs.resize(n);
-        
-        uint64_t carry = 0;
-        for (size_t i = 0; i < n; ++i) {
-            /*
-            a =    |||| ||||
-            b = || |||| ||||
-            */
-           //Take each set of 64-bit in each limb, if exceed the smaller bigint, refresh the index of that to 0 and go on
-            uint64_t a_limb = (i < a.limbs.size()) ? a.limbs[i] : 0;
-            uint64_t b_limb = (i < b.limbs.size()) ? b.limbs[i] : 0;
+        if (a.neg == b.neg) {
+            // Same sign: add magnitudes
+            BigInt result;
+            result.limbs.clear();
             
-            // This detects overflow: if sum < a_limb, it wrapped around
-            uint64_t sum = a_limb + carry; //sum is always > a_limb
-            bool carry1 = (sum < a_limb);  //if sum is < a_limb ==> overflow
+            size_t n = std::max(a.limbs.size(), b.limbs.size());
+            result.limbs.resize(n);
             
-            sum += b_limb;
-            bool carry2 = (sum < b_limb);
-            
-            result.limbs[i] = sum;
-            carry = (carry1 || carry2) ? 1 : 0;
-        }
-        if (carry > 0) {
-            result.limbs.push_back(carry); //0x00000000000000001
-        }
-        return result;
-    }
-
-    // Subtraction (a - b)
-    friend BigInt operator-(const BigInt& a, const BigInt& b) {
-        if (a < b) {
-            throw std::underflow_error("BigInt subtraction would result in negative value");
-        }
-        
-        BigInt result = a;
-        uint64_t borrow = 0;
-        
-        for (size_t i = 0; i < b.limbs.size() || borrow; ++i) {
-            uint64_t b_limb = (i < b.limbs.size()) ? b.limbs[i] : 0;
-            
-            // Check if we need to borrow
-            if (result.limbs[i] < b_limb + borrow) {
-                result.limbs[i] = result.limbs[i] + (UINT64_MAX - b_limb - borrow + 1);
-                borrow = 1;
-            } else {
-                result.limbs[i] = result.limbs[i] - b_limb - borrow;
-                borrow = 0;
+            uint64_t carry = 0;
+            for (size_t i = 0; i < n; ++i) {
+               //Take each set of 64-bit in each limb, if exceed the smaller bigint, refresh the index of that to 0 and go on
+                uint64_t a_limb = (i < a.limbs.size()) ? a.limbs[i] : 0;
+                uint64_t b_limb = (i < b.limbs.size()) ? b.limbs[i] : 0;
+                
+                // This detects overflow: if sum < a_limb, it wrapped around
+                uint64_t sum = a_limb + carry;
+                bool carry1 = (sum < a_limb);
+                
+                sum += b_limb;
+                bool carry2 = (sum < b_limb);
+                
+                result.limbs[i] = sum;
+                carry = (carry1 || carry2) ? 1 : 0;
             }
+            if (carry > 0) {
+                result.limbs.push_back(carry);
+            }
+            result.neg = a.neg;
+            result.normalize();
+            return result;
+        } else {
+            // Different signs: subtract magnitudes
+            if (a.limbs == b.limbs) {
+                return BigInt(0);
+            }
+
+            bool a_ge_b;
+            if (a.limbs.size() != b.limbs.size()) {
+                a_ge_b = (a.limbs.size() > b.limbs.size());
+            } else {
+                // same size -> compare limb-by-limb from most significant
+                a_ge_b = false;
+                for (int i = a.limbs.size() - 1; i >= 0; --i) {
+                    if (a.limbs[i] != b.limbs[i]) {
+                        a_ge_b = (a.limbs[i] > b.limbs[i]);
+                        break;
+                    }
+                }
+            }
+
+            BigInt result;
+            const BigInt *larger = a_ge_b ? &a : &b;
+            const BigInt *smaller = a_ge_b ? &b : &a;
+            result.limbs.assign(larger->limbs.size(), 0);
+
+            uint64_t borrow = 0;
+            for (size_t i = 0; i < larger->limbs.size(); ++i) {
+                uint64_t li = (i < larger->limbs.size()) ? larger->limbs[i] : 0;
+                uint64_t si = (i < smaller->limbs.size()) ? smaller->limbs[i] : 0;
+                uint64_t sub = li;
+                if (sub < si + borrow) {
+                    sub = sub + (UINT64_MAX - si - borrow + 1);
+                    borrow = 1;
+                } else {
+                    sub = sub - si - borrow;
+                    borrow = 0;
+                }
+                result.limbs[i] = sub;
+            }
+
+            result.neg = larger->neg; // sign follows the operand with larger magnitude
+            result.normalize();
+            return result;
         }
-        
-        result.normalize();
-        return result;
     }
 
-    //Multiplication (a * b) - Grade School O(n^2)
+    friend BigInt operator-(const BigInt& a, const BigInt& b) {
+        return a + (-b);
+    }
+
     friend BigInt operator*(const BigInt& a, const BigInt& b) {
         if (a.is_zero() || b.is_zero()) return BigInt(0);
         
@@ -311,84 +375,55 @@ public:
                 result.limbs[i + b.limbs.size()] += carry;
             }
         }
+        result.neg = (a.neg != b.neg) && !result.is_zero();
         result.normalize();
         return result;
     }
 
-    
-    // Division and Modulo (a / b) and (a % b)
-    // Returns {quotient, remainder}
-    // static std::pair<BigInt, BigInt> divmod(const BigInt& dividend, const BigInt& divisor) {
-    //     if (divisor.is_zero()) {
-    //         throw std::invalid_argument("Division by zero");
-    //     }
-    //     if (dividend < divisor) {
-    //         return {BigInt(0), dividend};
-    //     }
-
-    //     BigInt remainder = dividend;
-    //     BigInt quotient(0);
-
-    //     size_t shift = remainder.bit_length() - divisor.bit_length();
-    //     BigInt shifted = divisor << shift;
-
-    //     for (size_t i = shift + 1; i-- > 0;) {
-    //         if (!(remainder < shifted)) {
-    //             remainder = remainder - shifted;
-    //             quotient = quotient + (BigInt(1) << i);
-    //         }
-    //         shifted = shifted >> 1;
-    //     }
-    //     remainder.normalize();
-    //     quotient.normalize();
-    //     return {quotient, remainder};
-    // }
     static std::pair<BigInt, BigInt> divmod(const BigInt& dividend_in, const BigInt& divisor_in) {
-        if (divisor_in.is_zero()) 
-            throw std::runtime_error("Division by zero");
-        //Res
-        BigInt quotient(0);
-        BigInt remainder(0);
-        //Make copy
-        BigInt dividend = dividend_in;
-        BigInt divisor = divisor_in;
-
-        if (dividend < divisor) {
-            return {BigInt(0), dividend};
+        if (divisor_in.is_zero()) {
+            throw std::invalid_argument("Division by zero");
         }
 
-        // Binary Long Division (a simpler, but not fastest, approach)
-        // Find the highest power of 2 to multiply the divisor by
-        // divisor = 2^s . d 
-            //d -> odd
-            //s -> N
-        BigInt temp_divisor = divisor;
-        BigInt power_of_two(1); //0000 0001
-        
-        while (temp_divisor <= dividend) {
-            temp_divisor = temp_divisor << 1; //Find biggest even num (= 2^x * divisor) only after (>) the dividend 
-            power_of_two = power_of_two << 1; //2^x
+        // Special-case small dividend < divisor: quotient = 0, remainder = dividend (keep sign)
+        BigInt u = dividend_in.abs();
+        BigInt v = divisor_in.abs();
+        if (u < v) {
+            BigInt q(0);
+            BigInt r = dividend_in; // keep original sign for remainder
+            return {q, r};
         }
-        
-        // Now walk back down
-        temp_divisor = temp_divisor >> 1;
-        power_of_two = power_of_two >> 1;
 
-        //Dividend = 2^x * divisor + remainder
-        //           |               |
-        //           --> quotient    --> remainder
-        remainder = dividend;
-        while (!power_of_two.is_zero()) {
-            if (remainder >= temp_divisor) {
-                remainder = remainder - temp_divisor;   
-                quotient = quotient + power_of_two;
+        // Prepare quotient with enough limbs to hold (shift + 1) bits
+        size_t shift = u.bit_length() - v.bit_length(); // >= 0
+        size_t q_bits = shift + 1;
+        size_t q_limbs = (q_bits + 63) / 64;
+        BigInt quotient;
+        quotient.limbs.assign(q_limbs, 0);
+
+        BigInt remainder = u;
+        BigInt shifted = v << shift;
+
+        for (size_t i = shift + 1; i-- > 0;) {
+            if (!(remainder < shifted)) {
+                remainder = remainder - shifted;
+                size_t limb_idx = i / 64;
+                size_t bit_idx = i % 64;
+                if (limb_idx >= quotient.limbs.size()) quotient.limbs.resize(limb_idx + 1, 0);
+                quotient.limbs[limb_idx] |= (1ULL << bit_idx);
             }
-            temp_divisor = temp_divisor >> 1;
-            power_of_two = power_of_two >> 1;
+            shifted = shifted >> 1;
         }
 
         quotient.normalize();
         remainder.normalize();
+
+        // Apply signs
+        bool q_neg = (dividend_in.neg != divisor_in.neg) && !quotient.is_zero();
+        bool r_neg = dividend_in.neg && !remainder.is_zero();
+        quotient.neg = q_neg;
+        remainder.neg = r_neg;
+
         return {quotient, remainder};
     }
 
@@ -399,29 +434,23 @@ public:
         return divmod(a, b).second;
     }
 
-    /**
-     * @brief Prints the BigInt to std::cout as a base-16 hexadecimal string.
-     * This is very fast as it maps directly to the limb storage.
-     */
+    // --- Compound Assignment ---
+    BigInt& operator+=(const BigInt& o) { *this = *this + o; return *this; }
+    BigInt& operator-=(const BigInt& o) { *this = *this - o; return *this; }
+    BigInt& operator*=(const BigInt& o) { *this = *this * o; return *this; }
+    BigInt& operator/=(const BigInt& o) { *this = *this / o; return *this; }
+    BigInt& operator%=(const BigInt& o) { *this = *this % o; return *this; }
+
+    // --- Utilities ---
     void print_hex() const {
-        // Handle the zero case
-        if (is_zero()) {
-            std::cout << "0x0" << std::endl;
-            return;
+        if (neg) std::cout << "-";
+        std::cout << std::hex << std::nouppercase;
+        if (limbs.empty()) std::cout << "0";
+        else {
+            std::cout << limbs.back();
+            for (size_t i = limbs.size(); i-- > 1;)
+                std::cout << std::setw(16) << std::setfill('0') << limbs[i - 1];
         }
-
-        // Set up cout for hex output
-        std::cout << "0x" << std::hex;
-
-        // Print the most significant limb first, without padding
-        std::cout << limbs.back();
-
-        // Print the rest of the limbs, padding with '0' to 16 chars
-        for (int i = limbs.size() - 2; i >= 0; --i) {
-            std::cout << std::setw(16) << std::setfill('0') << limbs[i];
-        }
-
-        // Reset cout to decimal for future use
         std::cout << std::dec << std::endl;
     }
 };
@@ -430,145 +459,6 @@ public:
  * @brief Parses a little-endian hex string into a big-endian hex string.
  * "A1B2C3D4" (bytes A1, B2, C3, D4) -> "D4C3B2A1"
  */
-
-/**
- * @brief Minimal signed wrapper around the existing unsigned BigInt.
- *
- * Motivation: the extended Euclidean algorithm (Bezout) produces signed
- * coefficients (s, t) even when inputs a,b are non-negative. Your
- * BigInt is currently unsigned-only, so we keep the magnitude in
- * BigInt and track the sign separately. This is a small, safe change
- * that avoids rewriting the whole BigInt implementation.
- */
-/**
- * Full SignedBigInt built on top of the existing unsigned BigInt.
- * Provides arithmetic (+, -, *, /, %), comparisons and printing.
- * Division follows C++ semantics (quotient truncated toward zero,
- * remainder has same sign as numerator).
- */
-class SignedBigInt {
-public:
-    BigInt mag; // magnitude (absolute value)
-    bool neg;   // sign flag; false means non-negative
-
-    // --- Constructors ---
-    SignedBigInt() : mag(0), neg(false) {}
-    SignedBigInt(const BigInt &m, bool s = false) : mag(m), neg(s && !m.is_zero()) { normalize(); }
-    SignedBigInt(int64_t v) {
-        if (v < 0) { neg = true; mag = BigInt(static_cast<uint64_t>(-v)); }
-        else { neg = false; mag = BigInt(static_cast<uint64_t>(v)); }
-    }
-    SignedBigInt(const std::string &hex_be) : mag(hex_be), neg(false) { normalize(); }
-
-    void normalize() { if (mag.is_zero()) neg = false; }
-
-    bool is_zero() const { return mag.is_zero(); }
-
-    // Absolute value
-    BigInt abs() const { return mag; }
-
-    // Unary minus
-    SignedBigInt operator-() const { SignedBigInt r = *this; if (!r.mag.is_zero()) r.neg = !r.neg; return r; }
-
-    // --- Comparisons ---
-    friend bool operator==(const SignedBigInt &a, const SignedBigInt &b) {
-        return a.neg == b.neg && a.mag == b.mag;
-    }
-    friend bool operator!=(const SignedBigInt &a, const SignedBigInt &b) { return !(a == b); }
-
-    friend bool operator<(const SignedBigInt &a, const SignedBigInt &b) {
-        if (a.neg != b.neg) return a.neg; // negative < non-negative
-        if (!a.neg) return a.mag < b.mag;  // both non-negative
-        // both negative: larger magnitude -> smaller value
-        return b.mag < a.mag;
-    }
-    friend bool operator>(const SignedBigInt &a, const SignedBigInt &b) { return b < a; }
-    friend bool operator<=(const SignedBigInt &a, const SignedBigInt &b) { return !(a > b); }
-    friend bool operator>=(const SignedBigInt &a, const SignedBigInt &b) { return !(a < b); }
-
-    // --- Addition / Subtraction ---
-    friend SignedBigInt operator+(const SignedBigInt &a, const SignedBigInt &b) {
-        SignedBigInt r;
-        if (a.neg == b.neg) {
-            r.mag = a.mag + b.mag;
-            r.neg = a.neg && !r.mag.is_zero();
-        } else {
-            if (a.mag >= b.mag) {
-                r.mag = a.mag - b.mag;
-                r.neg = a.neg && !r.mag.is_zero();
-            } else {
-                r.mag = b.mag - a.mag;
-                r.neg = b.neg && !r.mag.is_zero();
-            }
-        }
-        r.normalize();
-        return r;
-    }
-    friend SignedBigInt operator-(const SignedBigInt &a, const SignedBigInt &b) { return a + (-b); }
-
-    SignedBigInt &operator+=(const SignedBigInt &o) { *this = *this + o; return *this; }
-    SignedBigInt &operator-=(const SignedBigInt &o) { *this = *this - o; return *this; }
-
-    // --- Multiplication ---
-    friend SignedBigInt operator*(const SignedBigInt &a, const SignedBigInt &b) {
-        SignedBigInt r;
-        r.mag = a.mag * b.mag;
-        r.neg = (a.neg != b.neg) && !r.mag.is_zero();
-        r.normalize();
-        return r;
-    }
-    SignedBigInt &operator*=(const SignedBigInt &o) { *this = *this * o; return *this; }
-
-    // --- Division / Modulo ---
-    // Division truncates toward zero (C/C++ semantics). Remainder has same sign as numerator.
-    friend SignedBigInt operator/(const SignedBigInt &a, const SignedBigInt &b) {
-        if (b.mag.is_zero()) throw std::invalid_argument("Division by zero");
-        SignedBigInt r;
-        BigInt q = a.mag / b.mag; // quotient magnitude (non-negative)
-        r.mag = q;
-        r.neg = (a.neg != b.neg) && !r.mag.is_zero();
-        r.normalize();
-        return r;
-    }
-    friend SignedBigInt operator%(const SignedBigInt &a, const SignedBigInt &b) {
-        if (b.mag.is_zero()) throw std::invalid_argument("Modulo by zero");
-        SignedBigInt r;
-        BigInt rem = a.mag % b.mag; // remainder magnitude >= 0
-        r.mag = rem;
-        // remainder sign follows numerator (a)
-        r.neg = a.neg && !r.mag.is_zero();
-        r.normalize();
-        return r;
-    }
-    SignedBigInt &operator/=(const SignedBigInt &o) { *this = *this / o; return *this; }
-    SignedBigInt &operator%=(const SignedBigInt &o) { *this = *this % o; return *this; }
-
-    // Mixed operations with unsigned BigInt
-    friend SignedBigInt operator*(const SignedBigInt &a, const BigInt &b) {
-        SignedBigInt r; r.mag = a.mag * b; r.neg = a.neg && !r.mag.is_zero(); r.normalize(); return r;
-    }
-    friend SignedBigInt operator*(const BigInt &b, const SignedBigInt &a) { return a * b; }
-
-    friend SignedBigInt operator+(const SignedBigInt &a, const BigInt &b) { return a + SignedBigInt(b, false); }
-    friend SignedBigInt operator-(const SignedBigInt &a, const BigInt &b) { return a - SignedBigInt(b, false); }
-    friend SignedBigInt operator/(const SignedBigInt &a, const BigInt &b) { return a / SignedBigInt(b, false); }
-    friend SignedBigInt operator%(const SignedBigInt &a, const BigInt &b) { return a % SignedBigInt(b, false); }
-
-    // --- Utilities ---
-    // Print as hex with optional leading '-' for negative values
-    void print_hex() const {
-        if (is_zero()) { std::cout << "0x0" << std::endl; return; }
-        if (neg) std::cout << '-';
-        mag.print_hex();
-    }
-
-    std::string to_hex_string() const {
-        std::string s = (neg ? std::string("-") : std::string(""));
-        s += mag.to_hex_string();
-        return s;
-    }
-};
-
 std::string parse_little_endian_hex(const std::string& le_hex) {
     
     // Simply reverse the entire string

@@ -1,104 +1,118 @@
 #include "miller_rabin.h"
 
-// int main() {
-//     // --- Test Basic BigInt Arithmetic First ---
-//     std::cout << "--- Testing Basic BigInt Operations ---\n";
-    
-//     // Test 1: Multiplication
-//     BigInt a("10000000000000000"); // 2^64
-//     BigInt b("2");
-//     BigInt product = a * b;
-//     std::cout << "Test Mul: 2^64 * 2 = ";
-//     product.print_hex();
-//     // Expected: 0x20000000000000000
-    
-//     // Test 2: Modulo with detailed debug
-//     std::cout << "\n=== Detailed Debug for 17 % 5 ===\n";
-//     BigInt c("11");  // 17
-//     BigInt d("5");   // 5
-    
-//     std::cout << "c (17) = "; c.print_hex();
-//     std::cout << "d (5) = "; d.print_hex();
-    
-//     // Test subtraction directly
-//     BigInt test_sub = c - d;
-//     std::cout << "17 - 5 = "; test_sub.print_hex();
-    
-//     BigInt test_sub2 = test_sub - d;
-//     std::cout << "12 - 5 = "; test_sub2.print_hex();
-    
-//     BigInt test_sub3 = test_sub2 - d;
-//     std::cout << "7 - 5 = "; test_sub3.print_hex();
-    
-//     auto [q, r] = BigInt::divmod(c, d);
-//     std::cout << "Debug: 17 / 5 = quotient: ";
-//     q.print_hex();
-//     std::cout << "Debug: 17 / 5 = remainder: ";
-//     r.print_hex();
-//     BigInt mod = c % d;
-//     std::cout << "Test Mod: 17 % 5 = ";
-//     mod.print_hex();
-//     std::cout << "===================================\n\n";
-// // ...existing code...
-    
-//     // Test 3: Power Mod
-//     BigInt base("2");
-//     BigInt exp("A");
-//     BigInt modulus("3E8");
-//     BigInt result = powMod_big(base, exp, modulus);
-//     std::cout << "Test PowMod: 2^10 % 1000 = ";
-//     result.print_hex();
-//     // Expected: 0x18 (24 decimal, since 1024 % 1000 = 24)
-    
-//     std::cout << "\n";
+/**
+ * @brief Performs modular exponentiation (base^exp) % mod.
+ */
+BigInt powMod(BigInt base, BigInt exp, const BigInt& mod) {
+    BigInt result(1);
+    base %= mod;
+    while (exp > 0) {
+        if (!exp.is_even()) {
+            result = (result * base) % mod;
+        }
+        exp = exp >> 1; // exp /= 2
+        base = (base * base) % mod;
+    }
+    return result;
+}
 
-//     // --- Test with BigInt ---
-//     std::cout << "--- Testing BigInt Miller-Rabin ---\n";
-// // ...existing code...
-//     return 0;
-// }
+/**
+ * @brief Generates a cryptographically secure random BigInt in [min, max].
+ */
+BigInt random_bigint_in_range(const BigInt& min, const BigInt& max) {
+    // Create a static generator to be seeded only once
+    static std::random_device rd;
+    static std::mt19937_64 gen(rd());
 
-// int main() {
-//     struct Case { BigInt n; bool prime; };
-//     std::vector<Case> cases = {
-//         { BigInt(2),  true },
-//         { BigInt(3),  true },
-//         { BigInt(4),  false },
-//         { BigInt(0x11), true },           // 17 decimal
-//         { BigInt(0x15), false },          // 21 decimal
-//         { BigInt(0x17), true },           // 23 decimal
-//         { BigInt("3B"), true },           // 0x3B = 59
-//         { BigInt("1FFFFFFFFFFFFFFF"), true }, // 2^61 − 1 (hex)
-//         { BigInt("FEE1A8B523211E7342A8863D2632D2F422525F206C730D91293A1439983335BB"), true },
-//         { BigInt("E152201326324E8F2994496A4E879D24E4874D601A03FE46A543CD1499D06F41"), false }
-//     };
+    BigInt range = max - min + BigInt(1);
+    if (range <= BigInt(0)) {
+        return min;
+    }
 
-//     int failures = 0;
-//     for (const auto& c : cases) {
-//         bool got = isProbablePrime_big(c.n, /*rounds=*/0);
-//         if (got != c.prime) {
-//             std::cout << "FAIL "
-//                       << (c.n.is_zero() ? "0"
-//                                         : c.n.to_hex_string())
-//                       << " expected " << (c.prime ? "prime" : "composite")
-//                       << " got " << (got ? "prime" : "composite") << "\n";
-//             ++failures;
-//         }
-//     }
+    // This is why bit_length() must be public
+    size_t bits = range.bit_length();
+    size_t num_limbs = (bits + 63) / 64;
+    if (num_limbs == 0) num_limbs = 1;
 
-//     if (failures == 0) {
-//         std::cout << "All BigInt Miller-Rabin tests passed (" << cases.size() << ")\n";
-//     } else {
-//         std::cout << failures << " tests failed\n";
-//     }
-//     return failures ? 1 : 0;
-// }
+    BigInt rnd;
+    do {
+        // .limbs is public, so we can access it
+        rnd.limbs.resize(num_limbs, 0);
+        for (size_t i = 0; i < num_limbs; ++i) {
+            rnd.limbs[i] = gen();
+        }
 
-int main() {
-    BigInt k("B");
-    BigInt x("1F");
-    BigInt y("6AF");
-    BigInt res = powMod_big(x, k, y);
-    res.print_hex();
-    return 0;
+        // Mask off extra bits in the most significant limb
+        size_t bits_in_msl = bits % 64;
+        if (bits_in_msl > 0) {
+            // Create mask, e.g., 0...011111 for 5 bits
+            uint64_t mask = (1ULL << bits_in_msl) - 1;
+            if (bits_in_msl == 63) mask = (1ULL << 63) - 1 + (1ULL << 63); // Handle 64-bit case
+            if (bits_in_msl == 0) mask = ~0ULL; // Handle 64-bit case
+
+            rnd.limbs.back() &= mask;
+        }
+        
+        // .normalize() is public
+        rnd.normalize();
+    } while (rnd >= range); // Rejection sampling
+
+    return rnd + min;
+}
+
+
+/**
+ * @brief Checks if the number is probably prime using Miller-Rabin.
+ */
+bool is_prime_miller_rabin(const BigInt& n, int k) {
+    // --- Step 1: Handle edge cases ---
+    if (n < BigInt(2)) return false;
+    if (n == BigInt(2) || n == BigInt(3)) return true;
+    if (n.is_even()) return false;
+
+    // --- Step 2: Find d and r such that n-1 = d * 2^r ---
+    BigInt n_minus_1 = n - BigInt(1);
+    BigInt d = n_minus_1;
+    size_t r = 0;
+    while (d.is_even()) {
+        d = d >> 1;
+        r++;
+    }
+    
+    BigInt n_minus_2 = n - BigInt(2); // For random range [2, n-2]
+
+    // --- Step 3: Witness loop (k rounds) ---
+    for (int i = 0; i < k; ++i) {
+        // Pick a random base 'a' in the range [2, n-2]
+        // Calls the free function
+        BigInt a = random_bigint_in_range(BigInt(2), n_minus_2);
+
+        // --- Step 4: Compute x = a^d % n ---
+        // Calls the free function
+        BigInt x = powMod(a, d, n);
+
+        // If x is 1 or n-1, it might be prime. Continue to next witness.
+        if (x == BigInt(1) || x == n_minus_1) {
+            continue;
+        }
+
+        // --- Step 5: Squaring loop (r-1 times) ---
+        bool probably_prime = false;
+        for (size_t j = 0; j < r - 1; ++j) {
+            x = (x * x) % n;
+            
+            if (x == n_minus_1) {
+                probably_prime = true;
+                break;
+            }
+        }
+
+        // --- Step 6: Verdict for this witness ---
+        if (!probably_prime) {
+            return false;
+        }
+    }
+
+    // --- Step 7: Final verdict ---
+    return true;
 }

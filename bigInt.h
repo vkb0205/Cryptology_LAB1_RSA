@@ -1,15 +1,13 @@
-// helper.h - declarations for big-integer helpers
-#ifndef HELPER_H
-#define HELPER_H
+#ifndef BIGINT_H
+#define BIGINT_H
 
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <vector>
 #include <cstdint>      // For uint64_t, uint32_t
-#include <algorithm>    // For std::reverse, std::max
 #include <stdexcept>    // For std::runtime_error
-#include <random>       // For Miller-Rabin
+#include <algorithm>    // For std::max, std::min
 #include <iomanip>      // For std::setw, std::setfill
 
 // --- FOR 128-BIT ARITHMETIC ---
@@ -48,24 +46,6 @@ struct uint128_t {
  * Limbs are little-endian (limbs[0] is the least significant).
  */
 class BigInt {
-private:
-    static unsigned count_leading_zeros(uint64_t limb) {
-    #if defined(_MSC_VER) && !defined(__clang__)
-        unsigned long idx;
-        _BitScanReverse64(&idx, limb);
-        return 63u - idx;
-    #else
-        return limb ? static_cast<unsigned>(__builtin_clzll(limb)) : 64u;
-    #endif
-    }
-
-    size_t bit_length() const {
-        if (is_zero()) return 0;
-        size_t ms = limbs.size() - 1;
-        uint64_t v = limbs[ms];
-        return ms * 64 + (64 - count_leading_zeros(v));
-    }
-
 public:
     std::vector<uint64_t> limbs; // magnitude (always non-negative)
     bool neg;                     // sign flag; false means non-negative, true means negative
@@ -124,26 +104,6 @@ public:
         normalize();
     }
 
-    // --- Conversion Functions ---
-    uint64_t to_uint64() const {
-        if (limbs.empty()) {
-            return 0;
-        }
-        // If there's more than one limb, the number is larger than 2^64 - 1.
-        if (limbs.size() > 1) {
-            return UINT64_MAX;
-        }
-        // Otherwise, the value is just the single limb.
-        return limbs[0];
-    }
-
-    //TODO: Conversion Overflow Handling
-    // int64_t to_int64() const {
-    //     uint64_t uval = to_uint64();
-    //     int64_t ival = static_cast<int64_t>(uval); <-- Potential overflow here
-    //     return neg ? -ival : ival;
-    // }
-
     std::string to_hex_string() const {
         std::ostringstream oss;
         oss << std::hex << std::nouppercase;
@@ -157,6 +117,23 @@ public:
     }
 
     // --- Helper Functions ---
+    static unsigned count_leading_zeros(uint64_t limb) {
+    #if defined(_MSC_VER) && !defined(__clang__)
+        unsigned long idx;
+        _BitScanReverse64(&idx, limb);
+        return 63u - idx;
+    #else
+        return limb ? static_cast<unsigned>(__builtin_clzll(limb)) : 64u;
+    #endif
+    }
+
+    size_t bit_length() const {
+        if (is_zero()) return 0;
+        size_t ms = limbs.size() - 1;
+        uint64_t v = limbs[ms];
+        return ms * 64 + (64 - count_leading_zeros(v));
+    }
+
     void normalize() {
         while (limbs.size() > 1 && limbs.back() == 0) limbs.pop_back(); //Trimming leading zero limbs
         if (limbs.size() == 1 && limbs[0] == 0) neg = false;
@@ -440,43 +417,6 @@ public:
     BigInt& operator*=(const BigInt& o) { *this = *this * o; return *this; }
     BigInt& operator/=(const BigInt& o) { *this = *this / o; return *this; }
     BigInt& operator%=(const BigInt& o) { *this = *this % o; return *this; }
-
-    // --- Utilities ---
-    void print_hex() const {
-        if (neg) std::cout << "-";
-        std::cout << std::hex << std::nouppercase;
-        if (limbs.empty()) std::cout << "0";
-        else {
-            std::cout << limbs.back();
-            for (size_t i = limbs.size(); i-- > 1;)
-                std::cout << std::setw(16) << std::setfill('0') << limbs[i - 1];
-        }
-        std::cout << std::dec << std::endl;
-    }
 };
 
-/**
- * @brief Parses a little-endian hex string into a big-endian hex string.
- * "A1B2C3D4" (bytes A1, B2, C3, D4) -> "D4C3B2A1"
- */
-std::string parse_little_endian_hex(const std::string& le_hex) {
-    
-    // Simply reverse the entire string
-    std::string be_hex(le_hex.rbegin(), le_hex.rend());
-    
-    std::cout << "DEBUG: LE '" << le_hex << "' --> BE '" << be_hex << "'\n";
-    return be_hex;
-}
-
-std::string readFile(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
-    }
-    std::string le_hex_str;
-    std::getline(file, le_hex_str);
-    file.close();
-    return le_hex_str;
-}
-
-#endif // HELPER_H
+#endif // BIGINT_H

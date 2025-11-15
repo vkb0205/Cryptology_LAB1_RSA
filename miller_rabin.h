@@ -1,177 +1,3 @@
-// #include <iostream>
-// #include <vector>
-// #include <tuple>
-// #include <algorithm>
-// #include <random>
-// #include "bigInt.h"
-
-
-// std::tuple<uint64_t, uint64_t> decompose(uint64_t n_minus_1) {
-//     uint64_t s = 0;
-//     uint64_t d = n_minus_1;
-//     while ((d & 1ULL) == 0ULL) {
-//         ++s;
-//         d >>= 1;
-//     }
-//     return std::make_tuple(s, d);
-// }
-// static inline uint64_t mulMod(uint64_t a, uint64_t b, uint64_t mod) {
-//     return static_cast<uint64_t>((__uint128_t)a * b % mod);
-// }
-
-// uint64_t powMod(uint64_t base, uint64_t exp, uint64_t mod) {
-//     uint64_t res = 1ULL;
-//     if (mod == 1ULL) return 0ULL;
-//     base %= mod;
-//     while (exp > 0) {
-//         if (exp & 1ULL) res = mulMod(res, base, mod);
-//         base = mulMod(base, base, mod);
-//         exp >>= 1ULL;
-//     }
-//     return res;
-// }
-
-// bool isWitness(uint64_t a, uint64_t n, uint64_t s, uint64_t d) {
-//     uint64_t x = powMod(a, d, n);
-//     if (x == 1ULL || x == n - 1ULL) return false;
-//     // Loop s - 1 times
-//     for (uint64_t i = 1; i < s; ++i) {
-//         x = mulMod(x, x, n);
-//         if (x == n - 1ULL) return false;
-//     }
-//     return true; // composite witness
-// }
-
-
-// static std::vector<uint64_t> chooseBases(uint64_t n, int rounds, bool deterministic)
-// {
-//     std::vector<uint64_t> bases;
-
-//     // Caller should handle n <= 4
-//     if (n <= 4) return bases;
-
-//     if (deterministic || rounds <= 0) {
-//         // Deterministic sets
-//         if (n < 4294967296ULL) {                 // n < 2^32
-//             bases = { 2ULL, 7ULL, 61ULL };
-//         } else if (n < 3474749660383ULL) {
-//             bases = { 2ULL, 3ULL, 5ULL, 7ULL, 11ULL, 13ULL };
-//         } else if (n < 341550071728321ULL) {
-//             bases = { 2ULL, 3ULL, 5ULL, 7ULL, 11ULL, 13ULL, 17ULL };
-//         } else {                                  // all 64-bit n
-//             bases = { 2ULL, 325ULL, 9375ULL, 28178ULL, 450775ULL, 9780504ULL, 1795265022ULL };
-//         }
-
-//         // Drop any base >= n (edge cases when n is tiny)
-//         bases.erase(
-//             std::remove_if(bases.begin(), bases.end(), [n](uint64_t a){ return a >= n; }),
-//             bases.end()
-//         );
-//     } else {
-//         // Probabilistic: pick unique random bases in [2, n-2]
-//         uint64_t maxDistinct = (n > 4) ? (n - 3) : 0; // count in [2, n-2]
-//         if (rounds < 0) rounds = 0;
-//         if (static_cast<uint64_t>(rounds) > maxDistinct)
-//             rounds = static_cast<int>(maxDistinct);
-
-//         std::random_device rd;
-//         std::mt19937_64 rng(rd());
-//         std::uniform_int_distribution<uint64_t> dist(2ULL, n - 2ULL);
-
-//         bases.reserve(rounds);
-//         while (static_cast<int>(bases.size()) < rounds) {
-//             uint64_t a = dist(rng);
-//             if (std::find(bases.begin(), bases.end(), a) == bases.end())
-//                 bases.push_back(a);
-//         }
-//     }
-
-//     return bases;
-// }
-
-// bool isPropablePrime(uint64_t n, int rounds) {
-//     if (n < 2UL) {return false;};
-//     if (n == 2ULL || n == 3ULL) {return true;};
-//     if ((n & 1ULL) == 0ULL) {return false;};
-
-//     auto [s, d] = decompose(n - 1ULL);
-
-//     std::vector<uint64_t> bases = chooseBases(n, rounds, true);
-
-//     for (uint64_t a : bases) {
-//         if (a % n == 0ULL) continue;
-//         if (isWitness(a, n, s, d)) return false;
-//     }
-//     return true;
-// }
-
-// // --- BigInt Miller-Rabin Implementation ---
-
-// // Decompose n-1 = 2^s * d
-// std::tuple<uint64_t, BigInt> decompose_big(BigInt n_minus_1) {
-//     uint64_t s = 0;
-//     BigInt d = n_minus_1;
-//     while (d.is_even()) {
-//         d = d >> 1;
-//         s++;
-//     }
-//     return std::make_tuple(s, d);
-// }
-
-// // Modular exponentiation: (base^exp) % mod for BigInt
-// BigInt powMod_big(BigInt base, BigInt exp, const BigInt& mod) {
-//     BigInt res(1);
-//     base = base % mod;
-//     while (!exp.is_zero()) {
-//         if (!exp.is_even()) {
-//             res = (res * base) % mod;
-//         }
-//         base = (base * base) % mod;
-//         exp = exp >> 1; 
-//     }
-//     return res;
-// }
-
-// // Witness test for BigInt
-// bool isWitness_big(const BigInt& a, const BigInt& n, uint64_t s, const BigInt& d) {
-//     BigInt x = powMod_big(a, d, n);
-//     BigInt n_minus_1 = n - BigInt(1);
-
-//     if (x == BigInt(1) || x == n_minus_1) {
-//         return false; // Not a witness
-//     }
-
-//     for (uint64_t i = 1; i < s; ++i) {
-//         x = (x * x) % n;
-//         if (x == n_minus_1) {
-//             return false; // Not a witness
-//         }
-//     }
-//     return true; // Is a witness (n is composite)
-// }
-
-// // Miller-Rabin primality test for BigInt
-// bool isProbablePrime_big(const BigInt& n, int rounds) {
-//     if (n < BigInt(2)) return false;
-//     if (n == BigInt(2) || n == BigInt(3)) return true;
-//     if (n.is_even()) return false;
-
-//     auto [s, d] = decompose_big(n - BigInt(1));
-
-//     // For BigInt, we still use small uint64_t bases for efficiency.
-//     // This is standard practice.
-//     std::vector<uint64_t> bases = chooseBases(n.to_uint64(), rounds, true);
-
-//     for (uint64_t a_val : bases) {
-//         BigInt a(a_val);
-//         if (a >= n) continue; // Base must be smaller than n
-//         if (isWitness_big(a, n, s, d)) {
-//             return false; // Composite
-//         }
-//     }
-//     return true; // Probably prime
-// }
-
 #ifndef MILLER_RABIN_H
 #define MILLER_RABIN_H
 
@@ -180,23 +6,117 @@
 
 /**
  * @brief Performs modular exponentiation (base^exp) % mod.
- * (Free function version)
  */
-BigInt powMod(BigInt base, BigInt exp, const BigInt& mod);
+BigInt powMod(BigInt base, BigInt exp, const BigInt& mod) {
+    BigInt result(1);
+    base %= mod;
+    while (exp > 0) {
+        if (!exp.is_even()) {
+            result = (result * base) % mod;
+        }
+        exp = exp >> 1; // exp /= 2
+        base = (base * base) % mod;
+    }
+    return result;
+}
 
 /**
  * @brief Generates a cryptographically secure random BigInt in [min, max].
- * (Free function version)
  */
-BigInt random_bigint_in_range(const BigInt& min, const BigInt& max);
+BigInt random_bigint_in_range(const BigInt& min, const BigInt& max) {
+    // Create a static generator to be seeded only once
+    static std::random_device rd;
+    static std::mt19937_64 gen(rd());
+
+    BigInt range = max - min + BigInt(1);
+    if (range <= BigInt(0)) {
+        return min;
+    }
+
+    // This is why bit_length() must be public
+    size_t bits = range.bit_length();
+    size_t num_limbs = (bits + 63) / 64;
+    if (num_limbs == 0) num_limbs = 1;
+
+    BigInt rnd;
+    do {
+        // .limbs is public, so we can access it
+        rnd.limbs.resize(num_limbs, 0);
+        for (size_t i = 0; i < num_limbs; ++i) {
+            rnd.limbs[i] = gen();
+        }
+
+        // Mask off extra bits in the most significant limb
+        size_t bits_in_msl = bits % 64;
+        if (bits_in_msl > 0) {
+            // Create mask, e.g., 0...011111 for 5 bits
+            uint64_t mask = (1ULL << bits_in_msl) - 1;
+            if (bits_in_msl == 63) mask = (1ULL << 63) - 1 + (1ULL << 63); // Handle 64-bit case
+            if (bits_in_msl == 0) mask = ~0ULL; // Handle 64-bit case
+
+            rnd.limbs.back() &= mask;
+        }
+        
+        rnd.normalize();
+    } while (rnd >= range); // Rejection sampling
+
+    return rnd + min;
+}
 
 /**
- * @brief Checks if a number is probably prime using Miller-Rabin.
- * (Free function version)
- * @param n The number to test.
- * @param k The number of rounds (witnesses).
- * @return true if the number is probably prime, false if composite.
+ * @brief Checks if the number is probably prime using Miller-Rabin.
  */
-bool is_prime_miller_rabin(const BigInt& n, int k);
+bool is_prime_miller_rabin(const BigInt& n, int k) {
+    // --- Step 1: Handle edge cases ---
+    if (n < BigInt(2)) return false;
+    if (n == BigInt(2) || n == BigInt(3)) return true;
+    if (n.is_even()) return false;
+
+    // --- Step 2: Find d and r such that n-1 = d * 2^r ---
+    BigInt n_minus_1 = n - BigInt(1);
+    BigInt d = n_minus_1;
+    size_t r = 0;
+    while (d.is_even()) {
+        d = d >> 1;
+        r++;
+    }
+    
+    BigInt n_minus_2 = n - BigInt(2); // For random range [2, n-2]
+
+    // --- Step 3: Witness loop (k rounds) ---
+    for (int i = 0; i < k; ++i) {
+        // Pick a random base 'a' in the range [2, n-2]
+        // Calls the free function
+        BigInt a = random_bigint_in_range(BigInt(2), n_minus_2);
+
+        // --- Step 4: Compute x = a^d % n ---
+        // Calls the free function
+        BigInt x = powMod(a, d, n);
+
+        // If x is 1 or n-1, it might be prime. Continue to next witness.
+        if (x == BigInt(1) || x == n_minus_1) {
+            continue;
+        }
+
+        // --- Step 5: Squaring loop (r-1 times) ---
+        bool probably_prime = false;
+        for (size_t j = 0; j < r - 1; ++j) {
+            x = (x * x) % n;
+            
+            if (x == n_minus_1) {
+                probably_prime = true;
+                break;
+            }
+        }
+
+        // --- Step 6: Verdict for this witness ---
+        if (!probably_prime) {
+            return false;
+        }
+    }
+
+    // --- Step 7: Final verdict ---
+    return true;
+}
 
 #endif // MILLER_RABIN_H

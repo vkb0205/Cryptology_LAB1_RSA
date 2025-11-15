@@ -78,7 +78,7 @@ public:
         int count = 0;
         uint64_t current_limb = 0;
 
-        //Since the string stores the number in the format of big-endian
+        // Since the string stores the number in the format of big-endian
         for (int i = len - 1; i >= 0; --i) {
             char c = hex_str[i];
             uint64_t val;
@@ -106,7 +106,7 @@ public:
 
     std::string to_hex_string() const {
         std::ostringstream oss;
-        oss << std::hex << std::nouppercase;
+        oss << std::hex << std::uppercase;
         if (limbs.empty()) return "0";
         if (neg) oss << "-";
         oss << limbs.back();
